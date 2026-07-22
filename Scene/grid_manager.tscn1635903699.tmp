@@ -1,0 +1,25 @@
+[gd_scene format=3 uid="uid://baxfu3dm3fcsx"]
+
+[ext_resource type="Script" uid="uid://btw42f1mpbvwp" path="res://Script/grid_manager.gd" id="1_ujlow"]
+[ext_resource type="PackedScene" uid="uid://q7lj81sgvu7j" path="res://Unit.tscn" id="2_7mcna"]
+
+[node name="GridManager" type="Node3D" unique_id=869262525]
+script = ExtResource("1_ujlow")
+map_layout = "
+# # # # # #
+# # # # #
+# # # #
+# # # # # #
+"
+tile_color = Color(0.40668955, 0.8005179, 0.42786315, 1)
+border_thickness = 0.03
+hover_intensity = 0.5
+unit_scene = ExtResource("2_7mcna")
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=600071709]
+transform = Transform3D(0.70710677, -0.40860704, 0.5770964, 0, 0.8161376, 0.5778576, -0.70710677, -0.40860704, 0.5770964, 10, 10, 10)
+projection = 1
+size = 10.0
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=557775351]
+transform = Transform3D(1, 0, 0, 0, 0.7890781, 0.61429286, 0, -0.61429286, 0.7890781, 0, 1.0948137, 1.2447594)

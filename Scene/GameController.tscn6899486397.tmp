@@ -1,0 +1,40 @@
+[gd_scene format=3 uid="uid://baxfu3dm3fcsx"]
+
+[ext_resource type="Script" uid="uid://ca2ra615e314t" path="res://Script/game_controller.gd" id="1_l2gqs"]
+[ext_resource type="Script" uid="uid://dhoskytc6klyf" path="res://Script/input_handler.gd" id="2_y5yvd"]
+[ext_resource type="Script" uid="uid://btw42f1mpbvwp" path="res://Script/grid_manager.gd" id="3_m12nb"]
+[ext_resource type="PackedScene" uid="uid://q7lj81sgvu7j" path="res://Scene/Unit.tscn" id="4_nuatd"]
+[ext_resource type="PackedScene" uid="uid://wahgb3qq00wb" path="res://Scene/Building.tscn" id="5_d3lad"]
+[ext_resource type="Script" uid="uid://cob2qyne8o7ud" path="res://Script/ui_manager.gd" id="6_2n0i6"]
+
+[node name="GameController" type="Node3D" unique_id=869262525 node_paths=PackedStringArray("camera_pivot")]
+script = ExtResource("1_l2gqs")
+camera_pivot = NodePath("CameraPivot")
+enable_free_camera = null
+pan_speed = null
+drag_sensitivity = 0.5
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=557775351]
+transform = Transform3D(1, 0, 0, 0, 0.7890781, 0.61429286, 0, -0.61429286, 0.7890781, 0, 1.0948137, 1.2447594)
+
+[node name="InputHandler" type="Node3D" parent="." unique_id=460781667]
+script = ExtResource("2_y5yvd")
+
+[node name="GridManager" type="Node3D" parent="." unique_id=1305022930]
+script = ExtResource("3_m12nb")
+tile_color = Color(0.23553333, 0.40035298, 0.13961852, 1)
+move_duration = 0.2
+jump_peak = 0.45
+unit_scene = ExtResource("4_nuatd")
+building_scene = ExtResource("5_d3lad")
+
+[node name="UIManager" type="Node" parent="." unique_id=1667093120]
+script = ExtResource("6_2n0i6")
+
+[node name="CameraPivot" type="Node3D" parent="." unique_id=747861461]
+transform = Transform3D(0.70710677, 0, 0.70710677, 0, 1, 0, -0.70710677, 0, 0.70710677, 2.5, 0, 2.5)
+
+[node name="Camera3D" type="Camera3D" parent="CameraPivot" unique_id=600071709]
+transform = Transform3D(1, 0, 0, 0, 0.8161376, 0.5778576, 0, -0.5778576, 0.8161376, 0, 10, 10)
+projection = 1
+size = 10.0
