@@ -3,6 +3,8 @@ class_name GridManager
 
 # --- MAP LAYOUT CONFIGURATION ---
 @export_group("Map Layout (ASCII)")
+## Multiline text representation of the grid.
+## Use float numbers (e.g. 1.0, 1.5, 2.0) for block heights, or '0' / '.' for empty abysses.
 @export_multiline var map_layout: String = """
 1.0 1.0 1.0 1.0 1.0 1.0
 1.0 1.5 1.5 1.0 1.0 1.0
@@ -13,45 +15,45 @@ class_name GridManager
 
 # --- PROCEDURAL GENERATION ---
 @export_group("Procedural Generation - General")
-# If true, ignores ASCII layout and generates a random islands/hills map based on Simplex noise.
+## If enabled, the generator ignores the ASCII layout and designs a random island-based landscape.
 @export var use_procedural: bool = true
-# The horizontal (X, Z) size of the procedurally generated grid.
+## The grid dimensions (Width, Depth) of the procedurally generated board.
 @export var map_size: Vector2i = Vector2i(50, 50)
-# The minimum acceptable ratio of solid land. 0.35 means at least 35% of the map must be land.
+## The minimum required percentage of solid land on the board. Maps with too much water are rejected and regenerated.
 @export_range(0.1, 0.8, 0.05) var min_playable_ratio: float = 0.35
-# Max attempts to generate random seeds before giving up if HQ paths are blocked.
+## The maximum number of attempts the generator will make to find a fully connected map before giving up.
 @export_range(10, 200, 5) var max_generation_attempts: int = 100
 
 @export_group("Procedural Generation - Seed")
-# If true, generates a random seed every play. If false, uses the custom seed specified below.
+## If enabled, generates a completely random world seed every play. Disable to lock a specific seed below.
 @export var use_random_seed: bool = true
-# Fixed seed for tactical testing.
+## Fixed seed used for generation if Use Random Seed is disabled. Useful for securing a persistent map layout.
 @export var custom_seed: int = 12345
 
 @export_group("Procedural Generation - Noise Settings")
-# Noise frequency. Smaller values generate larger, smoother islands; larger values fragment the map into tiny archipelagos.
+## Determines the scale of the terrain hills. Smaller values create massive continuous islands, larger values fragment landmass.
 @export_range(0.01, 0.3, 0.005) var noise_frequency: float = 0.065
-# Fractal octaves. Larger values add detailed, rugged mountain ridges.
+## Number of detailed layers of fractal noise. Higher values add jagged, rugged, and realistic mountain ridges.
 @export_range(1, 6, 1) var noise_octaves: int = 4
-# Fractal lacunarity. Controls the ruggedness of mountain peaks.
+## Fractal lacunarity. Controls the scale gap between detail octaves, adjusting the ruggedness of peak formations.
 @export_range(1.0, 4.0, 0.1) var noise_lacunarity: float = 2.0
-# Fractal gain. Larger values stretch the heights higher.
+## Fractal gain. Controls the strength of high-frequency detail octaves, stretching mountain crests upwards.
 @export_range(0.1, 1.0, 0.05) var noise_gain: float = 0.45
 
 @export_group("Procedural Generation - Height Thresholds")
-# Noise below this limit is treated as deep water/abyss, skipping block generation.
+## Noise values below this threshold are treated as ocean/deep abysm, skipping block generation.
 @export_range(-1.0, 1.0, 0.01) var water_threshold: float = -0.22
-# Noise threshold for generating a low hill (height 1.5).
+## Noise threshold for elevating a block to a low hill (Height 1.5).
 @export_range(-1.0, 1.0, 0.01) var height_1_5_threshold: float = -0.05
-# Noise threshold for generating a medium hill (height 2.0).
+## Noise threshold for elevating a block to a medium hill (Height 2.0).
 @export_range(-1.0, 1.0, 0.01) var height_2_0_threshold: float = 0.1
-# Noise threshold for generating a medium-high hill (height 2.5).
+## Noise threshold for elevating a block to a medium-high hill (Height 2.5).
 @export_range(-1.0, 1.0, 0.01) var height_2_5_threshold: float = 0.22
-# Noise threshold for generating a medium mountain (height 3.0).
+## Noise threshold for elevating a block to a medium mountain (Height 3.0).
 @export_range(-1.0, 1.0, 0.01) var height_3_0_threshold: float = 0.35
-# Noise threshold for generating a high mountain (height 3.5).
+## Noise threshold for elevating a block to a high mountain (Height 3.5).
 @export_range(-1.0, 1.0, 0.01) var height_3_5_threshold: float = 0.5
-# Noise threshold for generating a peak mountain (height 4.0).
+## Noise threshold for elevating a block to the highest peak mountain (Height 4.0).
 @export_range(-1.0, 1.0, 0.01) var height_4_0_threshold: float = 0.65
 
 # --- VISUAL CONFIGURATIONS ---
@@ -84,20 +86,20 @@ class_name GridManager
 
 # --- VISUAL MOVEMENT ---
 @export_group("Visual Movement (Juice)")
-# Duration in seconds for a unit to walk from one tile to another.
+## Duration in seconds for a unit to walk from one tile to another.
 @export_range(0.1, 2.0, 0.05) var move_duration: float = 0.45
-# Maximum height of the jump arc when scaling elevations (0.0 slides flat).
+## Maximum height of the jump arc when scaling elevations (0.0 slides flat).
 @export_range(0.0, 2.0, 0.05) var jump_peak: float = 0.35
-# Maximum step height difference a unit can climb (e.g., 1.1 allows 1.0 step, blocks 1.5).
+## Maximum step height difference a unit can climb (e.g., 1.1 allows 1.0 step, blocks 1.5).
 @export_range(0.1, 3.0, 0.1) var max_climb_height: float = 1.1
 
 # --- ECONOMY SETTINGS ---
 @export_group("Economy (Advance Wars)")
-# Starting funds available in the player's cofre.
+## Starting funds available in the player's cofre.
 @export var initial_player_funds: int = 100
-# Amount of funds received at start of turn per owned city.
+## Amount of funds received at start of turn per owned city.
 @export var income_per_building: int = 50
-# Funds cost to deploy a new Mech on an empty factory.
+## Funds cost to deploy a new Mech on an empty factory.
 @export var unit_spawn_cost: int = 100
 
 # --- INSTANTIATION SCENES ---
@@ -320,10 +322,10 @@ func spawn_building(coords: Vector2i, name: String, faction: int, is_hq: bool):
 	return null
 
 
-# CORREÇÃO: Removida a tipagem estrita de retorno de classe "GridUnit"
-func spawn_unit_node(coords: Vector2i, name: String, is_enemy: bool, hp: int):
+func spawn_unit_node(coords: Vector2i, name: String, is_enemy: bool, hp: int) -> Node3D:
 	if not unit_scene or not grid_cells.has(coords): return null
 	var height = grid_cells[coords].get_meta("height")
+	
 	var unit_instance = unit_scene.instantiate()
 	if unit_instance:
 		unit_instance.position = Vector3(coords.x, height, coords.y)
@@ -338,7 +340,7 @@ func spawn_unit_node(coords: Vector2i, name: String, is_enemy: bool, hp: int):
 	return null
 
 
-# --- BFS ALGORITHMS (Dynamic Cast-Free) ---
+# --- BFS ALGORITHMS ---
 
 func calculate_reachable_tiles(start_coords: Vector2i, max_range: int) -> Array[Vector2i]:
 	var reachable: Array[Vector2i] = []
@@ -408,7 +410,6 @@ func set_tile_base_state(coords: Vector2i, color: Color, strength: float, curren
 			apply_tile_visuals(coords, color, strength)
 
 
-# CORREÇÃO: Assinatura livre de tipo estrito de argumento ": GridUnit"
 func move_unit_to_tile(unit, target_coords: Vector2i) -> Tween:
 	var old_coords = unit.grid_position
 	unit.grid_position = target_coords
@@ -434,7 +435,6 @@ func move_unit_to_tile(unit, target_coords: Vector2i) -> Tween:
 	return tween
 
 
-# Backtracking route reconstruction
 func calculate_path_to_target(start_coords: Vector2i, target_coords: Vector2i, max_range: int) -> Array[Vector2i]:
 	var queue: Array = []
 	var visited: Dictionary = {}

@@ -30,6 +30,13 @@ var current_state: TurnState = TurnState.PLAYER_TURN
 # Middle mouse button (MMB) drag sensitivity.
 @export_range(0.1, 10.0, 0.05) var drag_sensitivity: float = 3.0
 
+# --- PERFORMANCE OPTIMIZATION ---
+@export_group("Optimizations")
+# Time interval in seconds between raycast occlusion checks. 
+# Increasing this reduces CPU overhead but may cause a slight delay in fading blocking terrain.
+@export_range(0.01, 0.5, 0.01) var occlusion_interval: float = 0.08
+
+
 # --- ECONOMY AND ANIMATION VARIABLES ---
 var player_funds: int = 0
 var is_animating: bool = false
@@ -41,10 +48,11 @@ var current_reachable_tiles: Array[Vector2i] = []
 var current_attackable_tiles: Array[Vector2i] = []
 var current_hovered_tile: Vector2i = Vector2i(-999, -999)
 
-# Undo and occlusion history
+# Undo, occlusion history, and performance timers
 var turn_history: Array = []
 var occluded_blocks: Array = []
 var is_dragging_camera: bool = false
+var occlusion_timer: float = 0.0
 
 
 func _ready() -> void:
@@ -77,10 +85,15 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	check_camera_occlusion()
-	
+	# Handles free keyboard pan if allowed
 	if enable_free_camera and not is_animating:
 		handle_keyboard_pan(delta)
+		
+	# Optimized: Run occlusion check under a strict timer threshold
+	occlusion_timer += delta
+	if occlusion_timer >= occlusion_interval:
+		occlusion_timer = 0.0
+		check_camera_occlusion()
 
 
 func setup_match_units_and_buildings() -> void:
@@ -109,7 +122,6 @@ func setup_match_units_and_buildings() -> void:
 		enemy.movement_range = 2
 
 
-# CORREÇÃO: Força explicitamente o tipo de retorno para Node3D (evita o erro de void function)
 func spawn_new_unit_at(coords: Vector2i, name: String, is_enemy: bool, hp: int) -> Node3D:
 	var unit = grid_manager.spawn_unit_node(coords, name, is_enemy, hp)
 	if unit:
@@ -173,7 +185,7 @@ func _on_tile_clicked(coords: Vector2i) -> void:
 		
 	# 2. Movimentação Passo a Passo (Escalar Relevo)
 	if selected_unit and current_reachable_tiles.has(coords):
-		is_animating = true # Trava os controles por segurança
+		is_animating = true
 		
 		# Registra o destino final na história de desfazer
 		record_player_move(selected_unit, selected_unit.grid_position, coords)
@@ -181,13 +193,11 @@ func _on_tile_clicked(coords: Vector2i) -> void:
 		clear_movement_highlights()
 		current_reachable_tiles.clear()
 		
-		# Calcula o caminho lógico do Mech bloco por bloco
+		# Caminha fisicamente bloco por bloco acompanhando a elevação do solo
 		var path = grid_manager.calculate_path_to_target(selected_unit.grid_position, coords, selected_unit.movement_range)
-		
-		# CORREÇÃO: Aguarda (await) a caminhada sequencial terminar por completo! [2]
 		await walk_unit_along_path(selected_unit, path)
 		
-		is_animating = false # DESTRAVA: Libera o mouse, teclado WASD e arrasto de câmera!
+		is_animating = false
 		
 		current_attackable_tiles = grid_manager.calculate_attackable_tiles(selected_unit.grid_position, selected_unit.attack_range)
 		if not current_attackable_tiles.is_empty():
@@ -462,6 +472,7 @@ func walk_unit_along_path(unit, path: Array[Vector2i]) -> void:
 		var target_height = grid_manager.grid_cells[next_step].get_meta("height")
 		var target_pos = Vector3(next_step.x, target_height, next_step.y)
 		
+		# Modulations de aceleração e frenagem (Speed Profile)
 		var trans = Tween.TRANS_SINE
 		var ease_type = Tween.EASE_IN_OUT
 		

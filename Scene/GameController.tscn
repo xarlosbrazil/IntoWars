@@ -9,8 +9,8 @@
 
 [node name="GameController" type="Node3D" unique_id=869262525 node_paths=PackedStringArray("camera_pivot")]
 script = ExtResource("1_l2gqs")
-drag_sensitivity = 0.5
 camera_pivot = NodePath("CameraPivot")
+drag_sensitivity = 0.5
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=557775351]
 transform = Transform3D(1, 0, 0, 0, 0.7890781, 0.61429286, 0, -0.61429286, 0.7890781, 0, 1.0948137, 1.2447594)
@@ -20,6 +20,10 @@ script = ExtResource("2_y5yvd")
 
 [node name="GridManager" type="Node3D" parent="." unique_id=1305022930]
 script = ExtResource("3_m12nb")
+map_size = Vector2i(20, 20)
+min_playable_ratio = 0.5
+noise_frequency = 0.05
+noise_lacunarity = 2.5
 tile_color = Color(0.23553333, 0.40035298, 0.13961852, 1)
 move_duration = 0.2
 jump_peak = 0.45
