@@ -1,3 +1,4 @@
+class_name GridUnit
 extends Node3D
 
 # --- SIGNALS ---

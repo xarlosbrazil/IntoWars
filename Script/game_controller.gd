@@ -1,6 +1,9 @@
 extends Node3D
 class_name GameController
 
+# --- PRELOAD DIRETO ---
+const Pathfinder = preload("res://Script/grid_pathfinder.gd")
+
 # --- LOCAL STATE MACHINE ---
 enum TurnState { 
 	PLAYER_TURN,
@@ -12,9 +15,11 @@ var current_state: TurnState = TurnState.PLAYER_TURN
 
 
 # --- COMPONENT REFERENCES ---
-@onready var input_handler: GridInputHandler = $InputHandler
-@onready var grid_manager: GridManager = $GridManager
+# CORREÇÃO: Tipagem dinâmica em conexões a nós customizados para evitar falhas de compilação [2]
+@onready var input_handler = $InputHandler
+@onready var grid_manager = $GridManager
 @onready var ui_manager = $UIManager
+@onready var ai_controller = $AIController
 
 # --- ORBITAL CAMERA CONFIGURATION ---
 @export_group("Orbital Camera")
@@ -41,14 +46,14 @@ var current_state: TurnState = TurnState.PLAYER_TURN
 var player_funds: int = 0
 var is_animating: bool = false
 
-# Selection states
+# Selection states (Dynamic/Casting-Free)
 var selected_unit = null
 var selected_building_coords: Vector2i = Vector2i(-999, -999)
 var current_reachable_tiles: Array[Vector2i] = []
 var current_attackable_tiles: Array[Vector2i] = []
 var current_hovered_tile: Vector2i = Vector2i(-999, -999)
 
-# Undo, occlusion history, and performance timers
+# Undo and occlusion history
 var turn_history: Array = []
 var occluded_blocks: Array = []
 var is_dragging_camera: bool = false
@@ -85,11 +90,10 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	# Handles free keyboard pan if allowed
 	if enable_free_camera and not is_animating:
 		handle_keyboard_pan(delta)
 		
-	# Optimized: Run occlusion check under a strict timer threshold
+	# Optimized: Throttled Raycast updates to minimize CPU overhead
 	occlusion_timer += delta
 	if occlusion_timer >= occlusion_interval:
 		occlusion_timer = 0.0
@@ -97,7 +101,6 @@ func _process(delta: float) -> void:
 
 
 func setup_match_units_and_buildings() -> void:
-	# Spawna QGs e Cidades baseado nas coordenadas válidas lidas do gerador
 	var p_hq_coord = grid_manager.grid_cells.keys()[0]
 	grid_manager.spawn_building(p_hq_coord, "Player HQ", 1, true)
 	
@@ -108,11 +111,7 @@ func setup_match_units_and_buildings() -> void:
 	var city_coord = grid_manager.grid_cells.keys()[middle_idx]
 	grid_manager.spawn_building(city_coord, "Neutral City", 0, false)
 	
-	# Spawna unidades iniciais
-	var p_unit_coord = p_hq_coord + Vector2i(1, 0)
-	if not grid_manager.grid_cells.has(p_unit_coord):
-		p_unit_coord = p_hq_coord + Vector2i(0, 1)
-	spawn_new_unit_at(p_unit_coord, "Player Mech", false, 3)
+	spawn_new_unit_at(p_hq_coord + Vector2i(1, 0), "Player Mech", false, 3)
 	
 	var e_unit_coord = e_hq_coord + Vector2i(-1, 0)
 	if not grid_manager.grid_cells.has(e_unit_coord):
@@ -129,7 +128,7 @@ func spawn_new_unit_at(coords: Vector2i, name: String, is_enemy: bool, hp: int) 
 	return unit
 
 
-# --- MÁQUINA DE ESTADOS (MUDANÇA DE ESTADOS) ---
+# --- TURN STATE MACHINE ---
 func change_state(new_state: TurnState) -> void:
 	current_state = new_state
 	
@@ -142,7 +141,6 @@ func change_state(new_state: TurnState) -> void:
 			turn_history.clear()
 			ui_manager.update_undo_button(true)
 			
-			# Economia: Renda de propriedades
 			var income = 0
 			for b in grid_manager.active_buildings.values():
 				if b.faction == 1: 
@@ -159,12 +157,12 @@ func change_state(new_state: TurnState) -> void:
 			turn_history.clear()
 			ui_manager.update_undo_button(true)
 			await get_tree().create_timer(0.4).timeout
-			execute_enemy_attacks()
+			ai_controller.execute_enemy_attacks()
 			change_state(TurnState.ENEMY_PLAN)
 			
 		TurnState.ENEMY_PLAN:
 			await get_tree().create_timer(0.4).timeout
-			await plan_enemy_attacks()
+			await ai_controller.plan_enemy_attacks()
 			change_state(TurnState.PLAYER_TURN)
 
 
@@ -172,66 +170,116 @@ func ui_layer_state_update(state_name: String, is_player: bool) -> void:
 	ui_manager.update_state_visuals(state_name, player_funds, is_player)
 
 
-# --- PROCESSADOR DE CLIQUES DE MOUSE (FORWARD DO INPUT_HANDLER) ---
+# --- INPUT INTERACTORS (FORWARD FROM INPUT_HANDLER) ---
 func _on_tile_clicked(coords: Vector2i) -> void:
 	if is_animating or current_state != TurnState.PLAYER_TURN: 
 		return
 	
-	# 1. Ataque
+	# 1. Attack
+	if _try_attack(coords):
+		return
+		
+	# 2. Movement (CORREÇÃO: Adicionado 'await' na chamada assíncrona)
+	if await _try_movement(coords):
+		return
+		
+	# 3. Skip Movement (Attack directly)
+	if _try_skip_movement(coords):
+		return
+		
+	# 4. Select Ally Unit
+	if _try_select_unit(coords):
+		return
+			
+	# 5. Select Empty Owned Base/Property for spawning
+	if _try_select_building(coords):
+		return
+			
+	clear_selection()
+
+
+
+# --- DECOMPOSED INTERACTION METHODS ---
+
+func _try_attack(coords: Vector2i) -> bool:
 	if selected_unit and current_attackable_tiles.has(coords):
 		execute_player_attack(selected_unit, coords)
 		clear_selection()
-		return
-		
-	# 2. Movimentação Passo a Passo (Escalar Relevo)
+		return true
+	return false
+
+
+# --- DECOMPOSED INTERACTION METHODS ---
+
+func _try_movement(coords: Vector2i) -> bool:
 	if selected_unit and current_reachable_tiles.has(coords):
 		is_animating = true
-		
-		# Registra o destino final na história de desfazer
 		record_player_move(selected_unit, selected_unit.grid_position, coords)
-		
 		clear_movement_highlights()
 		current_reachable_tiles.clear()
 		
-		# Caminha fisicamente bloco por bloco acompanhando a elevação do solo
-		var path = grid_manager.calculate_path_to_target(selected_unit.grid_position, coords, selected_unit.movement_range)
+		# Calculates routes using the static Pathfinder helper
+		var path = Pathfinder.calculate_path_to_target(
+			grid_manager.grid_cells, grid_manager.active_units, 
+			selected_unit.grid_position, coords, 
+			selected_unit.movement_range, grid_manager.max_climb_height
+		)
+		
+		# CORREÇÃO: Aguarda a caminhada terminar e depois desativa a animação
 		await walk_unit_along_path(selected_unit, path)
+		is_animating = false # Libera os controles do mouse e da câmera!
 		
-		is_animating = false
+		# Calcula alvos de ataque a partir da nova posição
+		current_attackable_tiles = Pathfinder.calculate_attackable_tiles(
+			grid_manager.grid_cells, grid_manager.active_units, 
+			selected_unit.grid_position, selected_unit.attack_range
+		)
 		
-		current_attackable_tiles = grid_manager.calculate_attackable_tiles(selected_unit.grid_position, selected_unit.attack_range)
 		if not current_attackable_tiles.is_empty():
 			highlight_attack_tiles(current_attackable_tiles)
+			print("Target in range! Click on the orange tile to attack.")
 		else:
 			selected_unit.has_acted_this_turn = true
 			clear_selection()
-		return
-		
-	# 3. Pular movimento
+		return true
+	return false
+
+
+func _try_skip_movement(coords: Vector2i) -> bool:
 	if selected_unit and coords == selected_unit.grid_position:
 		clear_movement_highlights()
 		current_reachable_tiles.clear()
-		current_attackable_tiles = grid_manager.calculate_attackable_tiles(selected_unit.grid_position, selected_unit.attack_range)
+		current_attackable_tiles = Pathfinder.calculate_attackable_tiles(
+			grid_manager.grid_cells, grid_manager.active_units, 
+			selected_unit.grid_position, selected_unit.attack_range
+		)
 		if not current_attackable_tiles.is_empty():
 			highlight_attack_tiles(current_attackable_tiles)
 		else:
 			selected_unit.has_acted_this_turn = true
 			clear_selection()
-		return
-		
-	# 4. Selecionar Aliado
+		return true
+	return false
+
+
+func _try_select_unit(coords: Vector2i) -> bool:
 	if grid_manager.active_units.has(coords):
 		var unit = grid_manager.active_units[coords]
 		if not unit.is_enemy and not unit.has_acted_this_turn:
 			clear_selection()
 			selected_unit = unit
-			current_reachable_tiles = grid_manager.calculate_reachable_tiles(selected_unit.grid_position, selected_unit.movement_range)
+			current_reachable_tiles = Pathfinder.calculate_reachable_tiles(
+				grid_manager.grid_cells, grid_manager.active_units, 
+				selected_unit.grid_position, selected_unit.movement_range, grid_manager.max_climb_height
+			)
 			highlight_move_tiles(current_reachable_tiles)
 			ui_manager.update_selection_visuals(selected_unit, null)
 			ui_manager.update_capture_button(not is_unit_over_capturable_property())
-			return
-			
-	# 5. Selecionar Fábrica vazia própria para Spawn
+			return true
+	return false
+
+
+func _try_select_building(coords: Vector2i) -> bool:
 	if grid_manager.active_buildings.has(coords) and not grid_manager.active_units.has(coords):
 		var building = grid_manager.active_buildings[coords]
 		if building.faction == 1:
@@ -240,12 +288,11 @@ func _on_tile_clicked(coords: Vector2i) -> void:
 			ui_manager.update_deploy_button(player_funds < grid_manager.unit_spawn_cost)
 			ui_manager.update_selection_visuals(null, building)
 			grid_manager.set_tile_base_state(coords, Color(0.2, 0.8, 0.2), 0.35, current_hovered_tile)
-			return
-			
-	clear_selection()
+			return true
+	return false
 
 
-# --- PROCESSADOR DE HOVER DE MOUSE (FORWARD DO INPUT_HANDLER) ---
+# --- HOVER HANDLING ---
 func _on_tile_hovered(coords: Vector2i) -> void:
 	if current_state != TurnState.PLAYER_TURN: 
 		return
@@ -270,16 +317,14 @@ func is_unit_over_capturable_property() -> bool:
 	return false
 
 
-# --- ATALHOS DE TECLADO, TECLAS DE CÂMERA E ARRASTAR MOUSE ---
+# --- INPUT SHORTCUTS & ORBITAL CAMERA ---
 func _unhandled_input(event: InputEvent) -> void:
-	# Clique do botão do meio do mouse (MMB) para arrastar
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_MIDDLE:
 		if event.pressed:
 			is_dragging_camera = true
 		else:
 			is_dragging_camera = false
 			
-	# Processa o arraste físico caso o botão do meio esteja pressionado
 	if event is InputEventMouseMotion and is_dragging_camera and enable_free_camera:
 		handle_camera_drag(event.relative)
 		return
@@ -287,7 +332,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	if current_state != TurnState.PLAYER_TURN:
 		return
 		
-	# Rotação Orbital de Câmera (Q roda para Esquerda, E roda para Direita)
 	if event is InputEventKey and event.pressed and not event.is_echo():
 		if event.keycode == KEY_Q:
 			rotate_camera_pivot(90)
@@ -296,23 +340,20 @@ func _unhandled_input(event: InputEvent) -> void:
 			rotate_camera_pivot(-90)
 			return
 
-	# End Turn Hotkey (Spacebar)
 	if event.is_action_pressed("ui_accept"):
 		_on_end_turn_requested()
 		return
 
-	# Undo Move Hotkey (Key R)
 	if event is InputEventKey and event.pressed and not event.is_echo() and event.keycode == KEY_R:
 		undo_last_move()
 		return
 
-	# Capture Action Hotkey (Key C)
 	if event is InputEventKey and event.pressed and not event.is_echo() and event.keycode == KEY_C:
 		execute_capture_action()
 		return
 
 
-# Rotaciona o pivô orbital suavemente
+# Rotates the orbital pivot
 func rotate_camera_pivot(angle_degrees: float) -> void:
 	if not camera_pivot or is_animating:
 		return
@@ -328,7 +369,7 @@ func rotate_camera_pivot(angle_degrees: float) -> void:
 	input_handler.tile_hovered.emit(input_handler.get_tile_at_mouse_position(get_viewport().get_mouse_position()))
 
 
-# Desliza o foco da câmera (Pan) suavemente para centrar no bloco alvo (Inibido se câmera livre estiver ativa)
+# Slides the camera pivot to center on target coordinates
 func pan_camera_to_coords(coords: Vector2i) -> void:
 	if not camera_pivot or enable_free_camera:
 		return
@@ -337,7 +378,7 @@ func pan_camera_to_coords(coords: Vector2i) -> void:
 	tween.tween_property(camera_pivot, "position", target_pos, 0.3)
 
 
-# Movimentação WASD
+# WASD Keyboard Pan
 func handle_keyboard_pan(delta: float) -> void:
 	if not camera_pivot:
 		return
@@ -355,7 +396,6 @@ func handle_keyboard_pan(delta: float) -> void:
 	if input_dir != Vector2.ZERO:
 		input_dir = input_dir.normalized()
 		
-		# Projeta os vetores Forward e Right do pivô de câmera no plano do chão (XZ)
 		var forward = -camera_pivot.global_transform.basis.z
 		var right = camera_pivot.global_transform.basis.x
 		forward.y = 0
@@ -363,12 +403,11 @@ func handle_keyboard_pan(delta: float) -> void:
 		forward = forward.normalized()
 		right = right.normalized()
 		
-		# O vetor de movimento é a soma das projeções relativas
 		var move_dir = forward * input_dir.y + right * input_dir.x
 		camera_pivot.global_position += move_dir * pan_speed * delta
 
 
-# Arraste de mouse estilo "Agarrar e Puxar o Chão"
+# MMB Drag
 func handle_camera_drag(relative: Vector2) -> void:
 	if not camera_pivot:
 		return
@@ -472,7 +511,7 @@ func walk_unit_along_path(unit, path: Array[Vector2i]) -> void:
 		var target_height = grid_manager.grid_cells[next_step].get_meta("height")
 		var target_pos = Vector3(next_step.x, target_height, next_step.y)
 		
-		# Modulations de aceleração e frenagem (Speed Profile)
+		# Speed profile modulations
 		var trans = Tween.TRANS_SINE
 		var ease_type = Tween.EASE_IN_OUT
 		
@@ -548,7 +587,7 @@ func undo_last_move() -> void:
 		update_unit_sprites_modulations()
 
 
-# Modulações estéticas de cores das peças
+# Aesthetic modulations
 func update_unit_sprites_modulations() -> void:
 	for unit in grid_manager.active_units.values():
 		if is_instance_valid(unit):
@@ -574,71 +613,6 @@ func execute_player_attack(attacker, target: Vector2i) -> void:
 		attacker.has_acted_this_turn = true
 		turn_history.clear()
 		ui_manager.update_undo_button(true)
-
-
-func plan_enemy_attacks() -> void:
-	var enemies: Array = []
-	for unit in grid_manager.active_units.values():
-		if unit.is_enemy: enemies.append(unit)
-	for enemy in enemies:
-		var player = find_closest_player(enemy.grid_position)
-		if player:
-			var best = find_best_tile_for_enemy(enemy, player.grid_position)
-			if best != enemy.grid_position:
-				var path = grid_manager.calculate_path_to_target(enemy.grid_position, best, enemy.movement_range)
-				await walk_unit_along_path(enemy, path)
-				
-			var diff = player.grid_position - enemy.grid_position
-			var dir = Vector2i.ZERO
-			if abs(diff.x) > abs(diff.y): dir.x = sign(diff.x)
-			else: dir.y = sign(diff.y)
-			enemy.ai_attack_dir = dir
-			enemy.update_ai_target_tile()
-			grid_manager.set_tile_base_state(enemy.ai_target_tile, grid_manager.danger_highlight_color, grid_manager.danger_highlight_strength, current_hovered_tile)
-
-
-func find_best_tile_for_enemy(enemy, player_pos: Vector2i) -> Vector2i:
-	var reachable = grid_manager.calculate_reachable_tiles(enemy.grid_position, enemy.movement_range)
-	reachable.append(enemy.grid_position)
-	var best = enemy.grid_position
-	var min_dist = 99999
-	for tile in reachable:
-		var dist = abs(tile.x - player_pos.x) + abs(tile.y - player_pos.y)
-		if dist < min_dist:
-			min_dist = dist
-			best = tile
-	return best
-
-
-func execute_enemy_attacks() -> void:
-	var enemies: Array = []
-	for unit in grid_manager.active_units.values():
-		if unit.is_enemy: enemies.append(unit)
-	for enemy in enemies:
-		enemy.update_ai_target_tile()
-		var target = enemy.ai_target_tile
-		grid_manager.set_tile_base_state(target, Color.WHITE, 0.0, current_hovered_tile)
-		if grid_manager.active_units.has(target):
-			var victim = grid_manager.active_units[target]
-			victim.take_damage(1)
-			if victim == selected_unit:
-				ui_manager.update_selection_visuals(selected_unit, null)
-			if victim.current_hp <= 0:
-				grid_manager.active_units.erase(target)
-		enemy.ai_attack_dir = Vector2i.ZERO
-		enemy.ai_target_tile = Vector2i.ZERO
-
-
-func find_closest_player(enemy_pos: Vector2i):
-	var closest = null
-	var min_dist = 99999
-	for unit in grid_manager.active_units.values():
-		if not unit.is_enemy:
-			var dist = abs(unit.grid_position.x - enemy_pos.x) + abs(unit.grid_position.y - enemy_pos.y)
-			if dist < min_dist:
-				min_dist = dist
-				closest = unit
-	return closest
 
 
 # --- GENERAL HELPERS ---

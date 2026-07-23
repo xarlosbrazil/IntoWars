@@ -1,3 +1,4 @@
+class_name GridBuilding
 extends Node3D
 
 signal faction_changed(new_faction: int)

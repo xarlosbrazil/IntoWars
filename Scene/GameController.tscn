@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" uid="uid://q7lj81sgvu7j" path="res://Scene/Unit.tscn" id="4_nuatd"]
 [ext_resource type="PackedScene" uid="uid://wahgb3qq00wb" path="res://Scene/Building.tscn" id="5_d3lad"]
 [ext_resource type="Script" uid="uid://cob2qyne8o7ud" path="res://Script/ui_manager.gd" id="6_2n0i6"]
+[ext_resource type="Script" uid="uid://58f2kfxmj5yg" path="res://Script/ai_controller.gd" id="7_y5yvd"]
 
 [node name="GameController" type="Node3D" unique_id=869262525 node_paths=PackedStringArray("camera_pivot")]
 script = ExtResource("1_l2gqs")
@@ -40,3 +41,6 @@ transform = Transform3D(0.70710677, 0, 0.70710677, 0, 1, 0, -0.70710677, 0, 0.70
 transform = Transform3D(1, 0, 0, 0, 0.8161376, 0.5778576, 0, -0.5778576, 0.8161376, 0, 10, 10)
 projection = 1
 size = 10.0
+
+[node name="AIController" type="Node3D" parent="." unique_id=183364085]
+script = ExtResource("7_y5yvd")

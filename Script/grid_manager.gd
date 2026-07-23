@@ -1,6 +1,9 @@
 extends Node3D
 class_name GridManager
 
+# --- PRELOAD DIRETO ---
+const Pathfinder = preload("res://Script/grid_pathfinder.gd")
+
 # --- MAP LAYOUT CONFIGURATION ---
 @export_group("Map Layout (ASCII)")
 ## Multiline text representation of the grid.
@@ -178,8 +181,8 @@ func generate_board() -> void:
 				var middle_idx = valid_coords.size() / 2
 				var city = valid_coords[middle_idx]
 				
-				# CONNECTIVITY VALIDATION (Flood Fill)
-				if is_path_possible(p_hq, e_hq) and is_path_possible(p_hq, city):
+				# Connectivity check delegates tasks to GridPathfinder
+				if Pathfinder.is_path_possible(grid_cells, p_hq, e_hq, max_climb_height) and Pathfinder.is_path_possible(grid_cells, p_hq, city, max_climb_height):
 					print("Procedural map approved successfully after ", attempts, " attempts!")
 					break
 					
@@ -257,29 +260,6 @@ func get_height_from_noise(n_val: float) -> float:
 		return 1.0
 
 
-# Flood Fill connectivity validator
-func is_path_possible(start: Vector2i, target: Vector2i) -> bool:
-	var queue: Array = [start]
-	var visited: Dictionary = {start: true}
-	var directions = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
-	
-	while not queue.is_empty():
-		var current = queue.pop_front()
-		if current == target:
-			return true
-			
-		for dir in directions:
-			var next = current + dir
-			if grid_cells.has(next) and not visited.has(next):
-				var h1 = grid_cells[current].get_meta("height")
-				var h2 = grid_cells[next].get_meta("height")
-				if abs(h1 - h2) <= max_climb_height:
-					visited[next] = true
-					queue.append(next)
-					
-	return false
-
-
 func spawn_block(x: int, z: int, height: float) -> void:
 	var block = StaticBody3D.new()
 	block.position = Vector3(x, height / 2.0, z)
@@ -322,10 +302,12 @@ func spawn_building(coords: Vector2i, name: String, faction: int, is_hq: bool):
 	return null
 
 
+# CORREÇÃO: Tipo de retorno atualizado para a classe genérica Node3D [2]
 func spawn_unit_node(coords: Vector2i, name: String, is_enemy: bool, hp: int) -> Node3D:
 	if not unit_scene or not grid_cells.has(coords): return null
 	var height = grid_cells[coords].get_meta("height")
 	
+	# CORREÇÃO: Removido o cast estrito "as GridUnit" que travava a compilação [2]
 	var unit_instance = unit_scene.instantiate()
 	if unit_instance:
 		unit_instance.position = Vector3(coords.x, height, coords.y)
@@ -374,7 +356,7 @@ func calculate_attackable_tiles(start_coords: Vector2i, max_range: int) -> Array
 		for step in range(1, max_range + 1):
 			var target = start_coords + (dir * step)
 			if grid_cells.has(target) and active_units.has(target):
-				var unit = active_units[target]
+				var unit = active_units[target] # CORREÇÃO: Removido o cast estrito "as GridUnit" [2]
 				if unit.is_enemy:
 					attackable.append(target)
 	return attackable
@@ -433,46 +415,3 @@ func move_unit_to_tile(unit, target_coords: Vector2i) -> Tween:
 		tween.tween_property(unit, "position:y", target_pos.y, move_duration).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 		
 	return tween
-
-
-func calculate_path_to_target(start_coords: Vector2i, target_coords: Vector2i, max_range: int) -> Array[Vector2i]:
-	var queue: Array = []
-	var visited: Dictionary = {}
-	var parents: Dictionary = {}
-	
-	queue.append([start_coords, 0])
-	visited[start_coords] = true
-	
-	var directions = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
-	var found = false
-	
-	while not queue.is_empty():
-		var current = queue.pop_front()
-		var current_coords = current[0]
-		var current_cost = current[1]
-		
-		if current_coords == target_coords:
-			found = true
-			break
-			
-		if current_cost < max_range:
-			for dir in directions:
-				var next_coords = current_coords + dir
-				if grid_cells.has(next_coords) and not visited.has(next_coords):
-					if not active_units.has(next_coords) or next_coords == target_coords:
-						var current_height = grid_cells[current_coords].get_meta("height")
-						var next_height = grid_cells[next_coords].get_meta("height")
-						if abs(current_height - next_height) <= max_climb_height:
-							visited[next_coords] = true
-							parents[next_coords] = current_coords
-							queue.append([next_coords, current_cost + 1])
-	
-	var path: Array[Vector2i] = []
-	if found:
-		var curr = target_coords
-		while curr != start_coords:
-			path.append(curr)
-			curr = parents[curr]
-		path.reverse()
-		
-	return path
