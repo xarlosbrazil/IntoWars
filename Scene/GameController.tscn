@@ -3,15 +3,23 @@
 [ext_resource type="Script" uid="uid://ca2ra615e314t" path="res://Script/game_controller.gd" id="1_l2gqs"]
 [ext_resource type="Script" uid="uid://dhoskytc6klyf" path="res://Script/input_handler.gd" id="2_y5yvd"]
 [ext_resource type="Script" uid="uid://btw42f1mpbvwp" path="res://Script/grid_manager.gd" id="3_m12nb"]
+[ext_resource type="Resource" uid="uid://c88inuh3t5tri" path="res://Script/Resources/player_base.tres" id="4_3a0bk"]
 [ext_resource type="PackedScene" uid="uid://q7lj81sgvu7j" path="res://Scene/Unit.tscn" id="4_nuatd"]
+[ext_resource type="Resource" uid="uid://joa5wbn2040e" path="res://Script/Resources/enemy_base.tres" id="5_cawvw"]
 [ext_resource type="PackedScene" uid="uid://wahgb3qq00wb" path="res://Scene/Building.tscn" id="5_d3lad"]
 [ext_resource type="Script" uid="uid://cob2qyne8o7ud" path="res://Script/ui_manager.gd" id="6_2n0i6"]
+[ext_resource type="Resource" uid="uid://j6exbdc4g8sr" path="res://Script/Resources/neutral_city.tres" id="6_r1ol7"]
 [ext_resource type="Script" uid="uid://58f2kfxmj5yg" path="res://Script/ai_controller.gd" id="7_y5yvd"]
 
 [node name="GameController" type="Node3D" unique_id=869262525 node_paths=PackedStringArray("camera_pivot")]
 script = ExtResource("1_l2gqs")
 camera_pivot = NodePath("CameraPivot")
 drag_sensitivity = 0.5
+player_mech_preset = ExtResource("4_3a0bk")
+enemy_scout_preset = ExtResource("5_cawvw")
+player_hq_preset = ExtResource("4_3a0bk")
+enemy_hq_preset = ExtResource("5_cawvw")
+neutral_city_preset = ExtResource("6_r1ol7")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=557775351]
 transform = Transform3D(1, 0, 0, 0, 0.7890781, 0.61429286, 0, -0.61429286, 0.7890781, 0, 1.0948137, 1.2447594)
@@ -33,6 +41,11 @@ building_scene = ExtResource("5_d3lad")
 
 [node name="UIManager" type="Node" parent="." unique_id=1667093120]
 script = ExtResource("6_2n0i6")
+tooltip_border_color = Color(1, 1, 1, 1)
+tooltip_content_margin_x = 26
+tooltip_content_margin_y = 16
+sprite_box_minimum_size = Vector2(96, 96)
+hbox_separation = 16
 
 [node name="CameraPivot" type="Node3D" parent="." unique_id=747861461]
 transform = Transform3D(0.70710677, 0, 0.70710677, 0, 1, 0, -0.70710677, 0, 0.70710677, 2.5, 0, 2.5)

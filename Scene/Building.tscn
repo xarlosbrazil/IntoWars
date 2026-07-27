@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://wahgb3qq00wb"]
 
 [ext_resource type="Script" uid="uid://ckshnhimhv4ou" path="res://Script/building.gd" id="1_8saja"]
-[ext_resource type="Texture2D" uid="uid://hdqpj0oc4jxs" path="res://cartoon-castle-computer-computer-software-postscript-smiley-special-folder-sprite-city-png-clipart.jpg" id="2_p48t8"]
+[ext_resource type="Texture2D" uid="uid://e0slf5ulgu0a" path="res://icon.svg" id="2_juf8h"]
 
 [node name="Building" type="Node3D" unique_id=869996152]
 script = ExtResource("1_8saja")
@@ -9,4 +9,4 @@ script = ExtResource("1_8saja")
 [node name="Sprite3D" type="Sprite3D" parent="." unique_id=1640306156]
 offset = Vector2(0, 256)
 pixel_size = 0.002
-texture = ExtResource("2_p48t8")
+texture = ExtResource("2_juf8h")

@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="BuildingData" format=3 uid="uid://j6exbdc4g8sr"]
+
+[ext_resource type="Script" uid="uid://kxyb1rf8o013" path="res://Script/bulding_data.gd" id="1_gjvn5"]
+[ext_resource type="Texture2D" uid="uid://bhqp6740iqp7e" path="res://Assets/castle.png" id="2_6kq0l"]
+
+[resource]
+script = ExtResource("1_gjvn5")
+building_name = "Neutral City"
+sprite_texture = ExtResource("2_6kq0l")
+metadata/_custom_type_script = "uid://kxyb1rf8o013"

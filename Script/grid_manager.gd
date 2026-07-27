@@ -286,36 +286,33 @@ func spawn_block(x: int, z: int, height: float) -> void:
 	block.add_child(collision_shape)
 
 
-func spawn_building(coords: Vector2i, name: String, faction: int, is_hq: bool):
+# MODIFICADO: Agora aceita e injeta dinamicamente o recurso BuildingData [2]
+func spawn_building(coords: Vector2i, building_preset: Resource, faction: int) -> Node3D:
 	if not building_scene or not grid_cells.has(coords): return null
 	var height = grid_cells[coords].get_meta("height")
 	var b_instance = building_scene.instantiate()
 	if b_instance:
+		b_instance.building_data = building_preset # Injeta o recurso
 		b_instance.position = Vector3(coords.x, height, coords.y)
 		b_instance.grid_position = coords
-		b_instance.building_name = name
 		b_instance.faction = faction
-		b_instance.is_hq = is_hq
 		add_child(b_instance)
 		active_buildings[coords] = b_instance
 		return b_instance
 	return null
 
 
-# CORREÇÃO: Tipo de retorno atualizado para a classe genérica Node3D [2]
-func spawn_unit_node(coords: Vector2i, name: String, is_enemy: bool, hp: int) -> Node3D:
+# MODIFICADO: Agora aceita e injeta dinamicamente o recurso UnitData [2]
+func spawn_unit_node(coords: Vector2i, unit_preset: Resource, is_enemy: bool) -> Node3D:
 	if not unit_scene or not grid_cells.has(coords): return null
 	var height = grid_cells[coords].get_meta("height")
 	
-	# CORREÇÃO: Removido o cast estrito "as GridUnit" que travava a compilação [2]
 	var unit_instance = unit_scene.instantiate()
 	if unit_instance:
+		unit_instance.unit_data = unit_preset # Injeta o recurso
 		unit_instance.position = Vector3(coords.x, height, coords.y)
 		unit_instance.grid_position = coords
-		unit_instance.unit_name = name
 		unit_instance.is_enemy = is_enemy
-		unit_instance.max_hp = hp
-		unit_instance.current_hp = hp
 		add_child(unit_instance)
 		active_units[coords] = unit_instance
 		return unit_instance
@@ -356,7 +353,7 @@ func calculate_attackable_tiles(start_coords: Vector2i, max_range: int) -> Array
 		for step in range(1, max_range + 1):
 			var target = start_coords + (dir * step)
 			if grid_cells.has(target) and active_units.has(target):
-				var unit = active_units[target] # CORREÇÃO: Removido o cast estrito "as GridUnit" [2]
+				var unit = active_units[target]
 				if unit.is_enemy:
 					attackable.append(target)
 	return attackable
@@ -415,3 +412,47 @@ func move_unit_to_tile(unit, target_coords: Vector2i) -> Tween:
 		tween.tween_property(unit, "position:y", target_pos.y, move_duration).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 		
 	return tween
+
+
+# Backtracking route reconstruction
+func calculate_path_to_target(start_coords: Vector2i, target_coords: Vector2i, max_range: int) -> Array[Vector2i]:
+	var queue: Array = []
+	var visited: Dictionary = {}
+	var parents: Dictionary = {}
+	
+	queue.append([start_coords, 0])
+	visited[start_coords] = true
+	
+	var directions = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	var found = false
+	
+	while not queue.is_empty():
+		var current = queue.pop_front()
+		var current_coords = current[0]
+		var current_cost = current[1]
+		
+		if current_coords == target_coords:
+			found = true
+			break
+			
+		if current_cost < max_range:
+			for dir in directions:
+				var next_coords = current_coords + dir
+				if grid_cells.has(next_coords) and not visited.has(next_coords):
+					if not active_units.has(next_coords) or next_coords == target_coords:
+						var current_height = grid_cells[current_coords].get_meta("height")
+						var next_height = grid_cells[next_coords].get_meta("height")
+						if abs(current_height - next_height) <= max_climb_height:
+							visited[next_coords] = true
+							parents[next_coords] = current_coords
+							queue.append([next_coords, current_cost + 1])
+	
+	var path: Array[Vector2i] = []
+	if found:
+		var curr = target_coords
+		while curr != start_coords:
+			path.append(curr)
+			curr = parents[curr]
+		path.reverse()
+		
+	return path

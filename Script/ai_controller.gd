@@ -1,12 +1,11 @@
 extends Node3D
 class_name GridAIController
 
-# --- PRELOAD DIRETO (Ignora bugs de cache global do Godot) ---
 const Pathfinder = preload("res://Script/grid_pathfinder.gd")
 
 @onready var game_controller = get_parent()
 
-# Computes paths and plans upcoming attacks for all active enemies
+
 func plan_enemy_attacks() -> void:
 	var grid_m = game_controller.grid_manager
 	var enemies: Array = []
@@ -15,12 +14,21 @@ func plan_enemy_attacks() -> void:
 			enemies.append(unit)
 			
 	for enemy in enemies:
-		var player = find_closest_player(enemy.grid_position, grid_m.active_units)
-		if player:
-			var best_tile = find_best_tile_for_enemy(enemy, player.grid_position, grid_m)
+		var target_pos: Vector2i = Vector2i(-999, -999)
+		
+		# 1. Tenta encontrar a unidade do jogador mais próxima
+		var target_player = find_closest_player(enemy.grid_position, grid_m.active_units)
+		if target_player:
+			target_pos = target_player.grid_position
+		else:
+			# 2. Se não houver jogadores perto, mira no QG do jogador (Ação de Marcha de Invasão) [1]
+			target_pos = find_player_hq_position(grid_m.active_buildings)
+			
+		# Se houver um alvo válido (Jogador ou QG) no mapa
+		if target_pos != Vector2i(-999, -999):
+			var best_tile = find_best_tile_for_enemy(enemy, target_pos, grid_m)
 			
 			if best_tile != enemy.grid_position:
-				# CORREÇÃO: Utiliza o Pathfinder pré-carregado diretamente do disco
 				var path = Pathfinder.calculate_path_to_target(
 					grid_m.grid_cells, grid_m.active_units, 
 					enemy.grid_position, best_tile, 
@@ -28,7 +36,8 @@ func plan_enemy_attacks() -> void:
 				)
 				await game_controller.walk_unit_along_path(enemy, path)
 				
-			var diff = player.grid_position - enemy.grid_position
+			# Agora na nova posição, calcula a direção para mirar o ataque
+			var diff = target_pos - enemy.grid_position
 			var dir = Vector2i.ZERO
 			if abs(diff.x) > abs(diff.y): 
 				dir.x = sign(diff.x)
@@ -46,9 +55,8 @@ func plan_enemy_attacks() -> void:
 			)
 
 
-# Evaluates pathfinding options to find the tile that minimizes distance to target
-func find_best_tile_for_enemy(enemy, player_pos: Vector2i, grid_m: GridManager) -> Vector2i:
-	# CORREÇÃO: Utiliza o Pathfinder pré-carregado diretamente do disco
+# Encontra o melhor bloco para o inimigo andar baseado na coordenada alvo
+func find_best_tile_for_enemy(enemy, target_pos: Vector2i, grid_m: GridManager) -> Vector2i:
 	var reachable = Pathfinder.calculate_reachable_tiles(
 		grid_m.grid_cells, grid_m.active_units, 
 		enemy.grid_position, enemy.movement_range, grid_m.max_climb_height
@@ -58,14 +66,13 @@ func find_best_tile_for_enemy(enemy, player_pos: Vector2i, grid_m: GridManager) 
 	var best = enemy.grid_position
 	var min_dist = 99999
 	for tile in reachable:
-		var dist = abs(tile.x - player_pos.x) + abs(tile.y - player_pos.y)
+		var dist = abs(tile.x - target_pos.x) + abs(tile.y - target_pos.y)
 		if dist < min_dist:
 			min_dist = dist
 			best = tile
 	return best
 
 
-# Resolves telegraphed attacks and inflicts damage
 func execute_enemy_attacks() -> void:
 	var grid_m = game_controller.grid_manager
 	var enemies: Array = []
@@ -88,12 +95,17 @@ func execute_enemy_attacks() -> void:
 				
 			if victim.current_hp <= 0:
 				grid_m.active_units.erase(target)
+		
+		# NOVA LÓGICA: IA ataca estruturas se elas estiverem na mira! [1]
+		elif grid_m.active_buildings.has(target):
+			var building = grid_m.active_buildings[target]
+			# Causa dano de captura (muda o domínio do prédio para a IA)
+			building.capture(2, 1) # Inimigo (facção 2) captura com força de 1 [1]
 				
 		enemy.ai_attack_dir = Vector2i.ZERO
 		enemy.ai_target_tile = Vector2i.ZERO
 
 
-# Finds the closest player unit to a given enemy coordinate
 func find_closest_player(enemy_pos: Vector2i, active_units: Dictionary):
 	var closest = null
 	var min_dist = 99999
@@ -104,3 +116,12 @@ func find_closest_player(enemy_pos: Vector2i, active_units: Dictionary):
 				min_dist = dist
 				closest = unit
 	return closest
+
+
+# AUXILIAR: Encontra a localização do QG do jogador no mapa [1]
+func find_player_hq_position(active_buildings: Dictionary) -> Vector2i:
+	for coords in active_buildings.keys():
+		var b = active_buildings[coords]
+		if b.faction == 1 and b.is_hq:
+			return coords
+	return Vector2i(-999, -999)
