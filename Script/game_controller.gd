@@ -15,7 +15,6 @@ var current_state: TurnState = TurnState.PLAYER_TURN
 
 
 # --- COMPONENT REFERENCES ---
-# CORREÇÃO: Tipagem dinâmica em conexões a nós customizados para evitar falhas de compilação [2]
 @onready var input_handler = $InputHandler
 @onready var grid_manager = $GridManager
 @onready var ui_manager = $UIManager
@@ -23,30 +22,33 @@ var current_state: TurnState = TurnState.PLAYER_TURN
 
 # --- ORBITAL CAMERA CONFIGURATION ---
 @export_group("Orbital Camera")
-# 3D central node acting as orbital pivot for the camera (must be parent of Camera3D).
 @export var camera_pivot: Node3D 
 
 # --- FREE CAMERA CONFIGURATIONS ---
 @export_group("Free Camera")
-# If active, allows the player to navigate freely using WASD and dragging MMB.
 @export var enable_free_camera: bool = true
-# Camera panning speed when using WASD keys.
 @export_range(1.0, 30.0, 0.5) var pan_speed: float = 12.0
-# Middle mouse button (MMB) drag sensitivity.
 @export_range(0.1, 10.0, 0.05) var drag_sensitivity: float = 3.0
 
 # --- PERFORMANCE OPTIMIZATION ---
 @export_group("Optimizations")
-# Time interval in seconds between raycast occlusion checks. 
-# Increasing this reduces CPU overhead but may cause a slight delay in fading blocking terrain.
 @export_range(0.01, 0.5, 0.01) var occlusion_interval: float = 0.08
 
+# --- EXPORTED PRESETS (RESOURCES) ---
+@export_group("Faction Presets (Resources)")
+@export var player_mech_preset: Resource
+@export var enemy_scout_preset: Resource
+@export var player_hq_preset: Resource
+@export var enemy_hq_preset: Resource
+@export var neutral_city_preset: Resource
 
-# --- ECONOMY AND ANIMATION VARIABLES ---
+
+# --- GAMEPLAY & STATE VARIABLES ---
 var player_funds: int = 0
 var is_animating: bool = false
+var turn_count: int = 0
 
-# Selection states (Dynamic/Casting-Free)
+# Selections
 var selected_unit = null
 var selected_building_coords: Vector2i = Vector2i(-999, -999)
 var current_reachable_tiles: Array[Vector2i] = []
@@ -93,36 +95,55 @@ func _process(delta: float) -> void:
 	if enable_free_camera and not is_animating:
 		handle_keyboard_pan(delta)
 		
-	# Optimized: Throttled Raycast updates to minimize CPU overhead
 	occlusion_timer += delta
 	if occlusion_timer >= occlusion_interval:
 		occlusion_timer = 0.0
 		check_camera_occlusion()
 
 
+# MODIFICADO: Calcula o centro e força o pivô da câmera a se teletransportar para lá na inicialização
 func setup_match_units_and_buildings() -> void:
-	var p_hq_coord = grid_manager.grid_cells.keys()[0]
-	grid_manager.spawn_building(p_hq_coord, "Player HQ", 1, true)
+	var valid_coords = grid_manager.grid_cells.keys()
+	if valid_coords.is_empty():
+		return
+		
+	# 1. Encontra o CENTRO exato das coordenadas geradas
+	var middle_idx = valid_coords.size() / 2
+	var p_hq_coord = valid_coords[middle_idx] # Coordenada do centro do mapa
 	
-	var e_hq_coord = grid_manager.grid_cells.keys()[grid_manager.grid_cells.size() - 1]
-	grid_manager.spawn_building(e_hq_coord, "Enemy HQ", 2, true)
+	# CENTRALIZAÇÃO INICIAL DA CÂMERA: Teleporta o pivô de câmera diretamente para o local do spawn do jogador
+	if camera_pivot:
+		camera_pivot.global_position = Vector3(p_hq_coord.x, 0.0, p_hq_coord.y)
 	
-	var middle_idx = grid_manager.grid_cells.size() / 2
-	var city_coord = grid_manager.grid_cells.keys()[middle_idx]
-	grid_manager.spawn_building(city_coord, "Neutral City", 0, false)
+	# Spawna o QG do jogador no CENTRO do tabuleiro
+	grid_manager.spawn_building(p_hq_coord, player_hq_preset, 1, true)
 	
-	spawn_new_unit_at(p_hq_coord + Vector2i(1, 0), "Player Mech", false, 3)
+	# Spawna o Mech aliado adjacente ao QG no centro do mapa
+	var p_unit_coord = p_hq_coord + Vector2i(1, 0)
+	if not grid_manager.grid_cells.has(p_unit_coord):
+		p_unit_coord = p_hq_coord + Vector2i(0, 1)
+	spawn_new_unit_at(p_unit_coord, player_mech_preset, false)
 	
+	# 2. Spawna o QG inimigo na ponta final (canto oposto do mapa)
+	var e_hq_coord = valid_coords[valid_coords.size() - 1]
+	grid_manager.spawn_building(e_hq_coord, enemy_hq_preset, 2, true)
+	
+	# Spawna o monstro inicial perto do QG dele
 	var e_unit_coord = e_hq_coord + Vector2i(-1, 0)
 	if not grid_manager.grid_cells.has(e_unit_coord):
 		e_unit_coord = e_hq_coord + Vector2i(0, -1)
-	var enemy = spawn_new_unit_at(e_unit_coord, "Alien Scout", true, 3)
+	var enemy = spawn_new_unit_at(e_unit_coord, enemy_scout_preset, true)
 	if enemy:
 		enemy.movement_range = 2
+		
+	# 3. Spawna uma cidade neutra disputada no meio do caminho entre o jogador e a IA
+	var city_idx = (middle_idx + valid_coords.size() - 1) / 2
+	var city_coord = valid_coords[city_idx]
+	grid_manager.spawn_building(city_coord, neutral_city_preset, 0, false)
 
 
-func spawn_new_unit_at(coords: Vector2i, name: String, is_enemy: bool, hp: int) -> Node3D:
-	var unit = grid_manager.spawn_unit_node(coords, name, is_enemy, hp)
+func spawn_new_unit_at(coords: Vector2i, preset: Resource, is_enemy: bool) -> Node3D:
+	var unit = grid_manager.spawn_unit_node(coords, preset, is_enemy)
 	if unit:
 		ui_manager.create_hp_bar_for_unit(unit)
 	return unit
@@ -138,9 +159,11 @@ func change_state(new_state: TurnState) -> void:
 	
 	match current_state:
 		TurnState.PLAYER_TURN:
+			turn_count += 1
 			turn_history.clear()
 			ui_manager.update_undo_button(true)
 			
+			# Economia: Renda de propriedades
 			var income = 0
 			for b in grid_manager.active_buildings.values():
 				if b.faction == 1: 
@@ -157,46 +180,81 @@ func change_state(new_state: TurnState) -> void:
 			turn_history.clear()
 			ui_manager.update_undo_button(true)
 			await get_tree().create_timer(0.4).timeout
-			ai_controller.execute_enemy_attacks()
+			await ai_controller.execute_enemy_attacks()
+			
+			check_defeat_conditions()
+			
 			change_state(TurnState.ENEMY_PLAN)
 			
 		TurnState.ENEMY_PLAN:
 			await get_tree().create_timer(0.4).timeout
+			
+			if turn_count > 0 and turn_count % 3 == 0:
+				spawn_enemy_invasion_wave()
+				
 			await ai_controller.plan_enemy_attacks()
 			change_state(TurnState.PLAYER_TURN)
 
 
 func ui_layer_state_update(state_name: String, is_player: bool) -> void:
-	ui_manager.update_state_visuals(state_name, player_funds, is_player)
+	var display_text = "TURN: " + str(turn_count) + " (" + state_name + ")"
+	ui_manager.update_state_visuals(display_text, player_funds, is_player)
 
 
-# --- INPUT INTERACTORS (FORWARD FROM INPUT_HANDLER) ---
+# --- SPAWNER DA INVASÃO INIMIGA (WAVE SYSTEM) ---
+func spawn_enemy_invasion_wave() -> void:
+	var e_hq_coord = Vector2i(-999, -999)
+	for coords in grid_manager.active_buildings.keys():
+		var b = grid_manager.active_buildings[coords]
+		if b.faction == 2 and b.is_hq:
+			e_hq_coord = coords
+			break
+			
+	if e_hq_coord != Vector2i(-999, -999):
+		var spawn_dirs = [Vector2i(1,0), Vector2i(-1,0), Vector2i(0,1), Vector2i(0,-1)]
+		for dir in spawn_dirs:
+			var candidate = e_hq_coord + dir
+			if grid_manager.grid_cells.has(candidate) and not grid_manager.active_units.has(candidate):
+				var new_alien = spawn_new_unit_at(candidate, enemy_scout_preset, true)
+				if new_alien:
+					new_alien.movement_range = 2
+					print("NEW WAVE: Enemy spawned at ", candidate, " marching to your HQ!")
+				break
+
+
+# --- CHECAGEM DE DERROTA ---
+func check_defeat_conditions() -> void:
+	var player_hq_alive = false
+	for b in grid_manager.active_buildings.values():
+		if b.is_hq and b.faction == 1:
+			player_hq_alive = true
+			break
+			
+	if not player_hq_alive:
+		print("GAME OVER: Your HQ has been captured or destroyed!")
+
+
+# --- PROCESSADOR DE CLIQUES DE MOUSE ---
 func _on_tile_clicked(coords: Vector2i) -> void:
 	if is_animating or current_state != TurnState.PLAYER_TURN: 
 		return
 	
-	# 1. Attack
 	if _try_attack(coords):
 		return
 		
-	# 2. Movement (CORREÇÃO: Adicionado 'await' na chamada assíncrona)
 	if await _try_movement(coords):
 		return
 		
-	# 3. Skip Movement (Attack directly)
 	if _try_skip_movement(coords):
 		return
 		
-	# 4. Select Ally Unit
 	if _try_select_unit(coords):
 		return
 			
-	# 5. Select Empty Owned Base/Property for spawning
 	if _try_select_building(coords):
 		return
 			
 	clear_selection()
-
 
 
 # --- DECOMPOSED INTERACTION METHODS ---
@@ -209,8 +267,6 @@ func _try_attack(coords: Vector2i) -> bool:
 	return false
 
 
-# --- DECOMPOSED INTERACTION METHODS ---
-
 func _try_movement(coords: Vector2i) -> bool:
 	if selected_unit and current_reachable_tiles.has(coords):
 		is_animating = true
@@ -218,18 +274,15 @@ func _try_movement(coords: Vector2i) -> bool:
 		clear_movement_highlights()
 		current_reachable_tiles.clear()
 		
-		# Calculates routes using the static Pathfinder helper
 		var path = Pathfinder.calculate_path_to_target(
 			grid_manager.grid_cells, grid_manager.active_units, 
 			selected_unit.grid_position, coords, 
 			selected_unit.movement_range, grid_manager.max_climb_height
 		)
 		
-		# CORREÇÃO: Aguarda a caminhada terminar e depois desativa a animação
 		await walk_unit_along_path(selected_unit, path)
-		is_animating = false # Libera os controles do mouse e da câmera!
+		is_animating = false 
 		
-		# Calcula alvos de ataque a partir da nova posição
 		current_attackable_tiles = Pathfinder.calculate_attackable_tiles(
 			grid_manager.grid_cells, grid_manager.active_units, 
 			selected_unit.grid_position, selected_unit.attack_range
@@ -237,7 +290,6 @@ func _try_movement(coords: Vector2i) -> bool:
 		
 		if not current_attackable_tiles.is_empty():
 			highlight_attack_tiles(current_attackable_tiles)
-			print("Target in range! Click on the orange tile to attack.")
 		else:
 			selected_unit.has_acted_this_turn = true
 			clear_selection()
@@ -304,6 +356,19 @@ func _on_tile_hovered(coords: Vector2i) -> void:
 		if coords != Vector2i(-999, -999):
 			grid_manager.apply_tile_visuals(coords, ui_manager.hover_color, ui_manager.hover_intensity)
 			
+			if grid_manager.active_units.has(coords):
+				ui_manager.show_unit_tooltip(grid_manager.active_units[coords])
+			else:
+				if selected_unit:
+					ui_manager.show_unit_tooltip(selected_unit)
+				else:
+					ui_manager.hide_unit_tooltip()
+		else:
+			if selected_unit:
+				ui_manager.show_unit_tooltip(selected_unit)
+			else:
+				ui_manager.hide_unit_tooltip()
+			
 		current_hovered_tile = coords
 
 
@@ -317,7 +382,7 @@ func is_unit_over_capturable_property() -> bool:
 	return false
 
 
-# --- INPUT SHORTCUTS & ORBITAL CAMERA ---
+# --- ATALHOS DE TECLADO, TECLAS DE CÂMERA E ARRASTAR MOUSE ---
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_MIDDLE:
 		if event.pressed:
@@ -332,6 +397,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if current_state != TurnState.PLAYER_TURN:
 		return
 		
+	# Rotação Orbital de Câmera (Q roda para Esquerda, E roda para Direita)
 	if event is InputEventKey and event.pressed and not event.is_echo():
 		if event.keycode == KEY_Q:
 			rotate_camera_pivot(90)
@@ -340,14 +406,17 @@ func _unhandled_input(event: InputEvent) -> void:
 			rotate_camera_pivot(-90)
 			return
 
+	# End Turn Hotkey (Spacebar)
 	if event.is_action_pressed("ui_accept"):
 		_on_end_turn_requested()
 		return
 
+	# Undo Move Hotkey (Key R)
 	if event is InputEventKey and event.pressed and not event.is_echo() and event.keycode == KEY_R:
 		undo_last_move()
 		return
 
+	# Capture Action Hotkey (Key C)
 	if event is InputEventKey and event.pressed and not event.is_echo() and event.keycode == KEY_C:
 		execute_capture_action()
 		return
@@ -463,38 +532,6 @@ func check_camera_occlusion() -> void:
 							occluded_blocks.append(hit_collider)
 
 
-# --- BUTTON EVENTS (UI -> Controller) ---
-
-func _on_end_turn_requested() -> void:
-	clear_selection()
-	change_state(TurnState.ENEMY_RESOLVE)
-
-
-func execute_capture_action() -> void:
-	if not selected_unit or selected_unit.has_acted_this_turn: 
-		return
-	var coords = selected_unit.grid_position
-	if grid_manager.active_buildings.has(coords):
-		var building = grid_manager.active_buildings[coords]
-		building.capture(1, selected_unit.current_hp)
-		selected_unit.has_acted_this_turn = true
-		turn_history.clear()
-		ui_manager.update_undo_button(true)
-		clear_selection()
-
-
-func execute_deploy_action() -> void:
-	if selected_building_coords == Vector2i(-999, -999) or player_funds < grid_manager.unit_spawn_cost: 
-		return
-	var new_mech = spawn_new_unit_at(selected_building_coords, "Player Mech", false, 3)
-	if new_mech:
-		new_mech.attack_damage = 1
-		new_mech.movement_range = 3
-		new_mech.has_acted_this_turn = true
-		player_funds -= grid_manager.unit_spawn_cost
-	clear_selection()
-
-
 # --- PATHFINDING MOVEMENT, WALK AND UNDO ---
 
 func walk_unit_along_path(unit, path: Array[Vector2i]) -> void:
@@ -542,14 +579,14 @@ func walk_unit_along_path(unit, path: Array[Vector2i]) -> void:
 		else:
 			step_tween.tween_property(unit, "position:y", target_pos.y, grid_manager.move_duration).set_trans(trans).set_ease(ease_type)
 		
-		step_tween.finished.connect(func():
-			grid_manager.active_units.erase(unit.grid_position)
-			grid_manager.active_units[next_step] = unit
-			unit.grid_position = next_step
-			pan_camera_to_coords(next_step)
-		)
-		
+		# Espera a movimentação física terminar por completo
 		await step_tween.finished
+		
+		# Atualiza a lógica de dados exatamente após a conclusão física do passo [2]
+		grid_manager.active_units.erase(unit.grid_position)
+		grid_manager.active_units[next_step] = unit
+		unit.grid_position = next_step
+		pan_camera_to_coords(next_step)
 
 
 func move_unit_on_board(unit, target: Vector2i) -> Tween:
@@ -604,15 +641,59 @@ func update_unit_sprites_modulations() -> void:
 
 # --- COMBATE E IA ---
 
-func execute_player_attack(attacker, target: Vector2i) -> void:
-	if grid_manager.active_units.has(target):
-		var victim = grid_manager.active_units[target]
+# MODIFICADO: Agora trava cliques de mouse, executa a investida rápida e só então causa dano [2]
+func execute_player_attack(attacker, target_coords: Vector2i) -> void:
+	if grid_manager.active_units.has(target_coords):
+		var victim = grid_manager.active_units[target_coords]
+		
+		is_animating = true # Trava cliques do jogador durante a colisão física
+		
+		# Executa a investida física do Mech batendo no monstro inimigo
+		var anim_tween = ui_manager.play_combat_animation(attacker, victim)
+		await anim_tween.finished
+		
+		# Só desconta o HP quando o golpe de investida física conecta!
 		victim.take_damage(attacker.attack_damage)
+		
+		is_animating = false # Destrava o mouse
+		
 		if victim.current_hp <= 0:
-			grid_manager.active_units.erase(target)
+			grid_manager.active_units.erase(target_coords)
+			
 		attacker.has_acted_this_turn = true
+		
 		turn_history.clear()
 		ui_manager.update_undo_button(true)
+
+
+# --- BUTTON EVENTS (UI -> Controller) ---
+
+func _on_end_turn_requested() -> void:
+	clear_selection()
+	change_state(TurnState.ENEMY_RESOLVE)
+
+
+func execute_capture_action() -> void:
+	if not selected_unit or selected_unit.has_acted_this_turn: 
+		return
+	var coords = selected_unit.grid_position
+	if grid_manager.active_buildings.has(coords):
+		var building = grid_manager.active_buildings[coords]
+		building.capture(1, selected_unit.current_hp)
+		selected_unit.has_acted_this_turn = true
+		turn_history.clear()
+		ui_manager.update_undo_button(true)
+		clear_selection()
+
+
+func execute_deploy_action() -> void:
+	if selected_building_coords == Vector2i(-999, -999) or player_funds < grid_manager.unit_spawn_cost: 
+		return
+	var new_mech = spawn_new_unit_at(selected_building_coords, player_mech_preset, false)
+	if new_mech:
+		new_mech.has_acted_this_turn = true
+		player_funds -= grid_manager.unit_spawn_cost
+	clear_selection()
 
 
 # --- GENERAL HELPERS ---
