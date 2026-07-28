@@ -101,25 +101,45 @@ func _process(delta: float) -> void:
 		check_camera_occlusion()
 
 
+# MODIFICADO: Calcula o centro e força o pivô da câmera a se teletransportar para lá na inicialização
 func setup_match_units_and_buildings() -> void:
-	var p_hq_coord = grid_manager.grid_cells.keys()[0]
-	grid_manager.spawn_building(p_hq_coord, player_hq_preset, 1)
+	var valid_coords = grid_manager.grid_cells.keys()
+	if valid_coords.is_empty():
+		return
+		
+	# 1. Encontra o CENTRO exato das coordenadas geradas
+	var middle_idx = valid_coords.size() / 2
+	var p_hq_coord = valid_coords[middle_idx] # Coordenada do centro do mapa
 	
-	var e_hq_coord = grid_manager.grid_cells.keys()[grid_manager.grid_cells.size() - 1]
-	grid_manager.spawn_building(e_hq_coord, enemy_hq_preset, 2)
+	# CENTRALIZAÇÃO INICIAL DA CÂMERA: Teleporta o pivô de câmera diretamente para o local do spawn do jogador
+	if camera_pivot:
+		camera_pivot.global_position = Vector3(p_hq_coord.x, 0.0, p_hq_coord.y)
 	
-	var middle_idx = grid_manager.grid_cells.size() / 2
-	var city_coord = grid_manager.grid_cells.keys()[middle_idx]
-	grid_manager.spawn_building(city_coord, neutral_city_preset, 0)
+	# Spawna o QG do jogador no CENTRO do tabuleiro
+	grid_manager.spawn_building(p_hq_coord, player_hq_preset, 1, true)
 	
-	spawn_new_unit_at(p_hq_coord + Vector2i(1, 0), player_mech_preset, false)
+	# Spawna o Mech aliado adjacente ao QG no centro do mapa
+	var p_unit_coord = p_hq_coord + Vector2i(1, 0)
+	if not grid_manager.grid_cells.has(p_unit_coord):
+		p_unit_coord = p_hq_coord + Vector2i(0, 1)
+	spawn_new_unit_at(p_unit_coord, player_mech_preset, false)
 	
+	# 2. Spawna o QG inimigo na ponta final (canto oposto do mapa)
+	var e_hq_coord = valid_coords[valid_coords.size() - 1]
+	grid_manager.spawn_building(e_hq_coord, enemy_hq_preset, 2, true)
+	
+	# Spawna o monstro inicial perto do QG dele
 	var e_unit_coord = e_hq_coord + Vector2i(-1, 0)
 	if not grid_manager.grid_cells.has(e_unit_coord):
 		e_unit_coord = e_hq_coord + Vector2i(0, -1)
 	var enemy = spawn_new_unit_at(e_unit_coord, enemy_scout_preset, true)
 	if enemy:
 		enemy.movement_range = 2
+		
+	# 3. Spawna uma cidade neutra disputada no meio do caminho entre o jogador e a IA
+	var city_idx = (middle_idx + valid_coords.size() - 1) / 2
+	var city_coord = valid_coords[city_idx]
+	grid_manager.spawn_building(city_coord, neutral_city_preset, 0, false)
 
 
 func spawn_new_unit_at(coords: Vector2i, preset: Resource, is_enemy: bool) -> Node3D:

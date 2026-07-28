@@ -286,18 +286,32 @@ func spawn_block(x: int, z: int, height: float) -> void:
 	block.add_child(collision_shape)
 
 
-# MODIFICADO: Agora aceita e injeta dinamicamente o recurso BuildingData [2]
-func spawn_building(coords: Vector2i, building_preset: Resource, faction: int) -> Node3D:
-	if not building_scene or not grid_cells.has(coords): return null
+# MODIFICADO: Função de spawn agora imprime alertas de diagnóstico se as cenas estiverem ausentes no editor
+func spawn_building(coords: Vector2i, building_preset: Resource, faction: int, is_hq_override: bool = false) -> Node3D:
+	if not building_scene:
+		print_rich("[color=yellow]WARNING: 'building_scene' (Building.tscn) is NOT assigned in GridManager's Inspector![/color]")
+		return null
+		
+	if not grid_cells.has(coords):
+		print_rich("[color=yellow]WARNING: Cannot spawn building at ", coords, " because the tile does not exist![/color]")
+		return null
+		
 	var height = grid_cells[coords].get_meta("height")
 	var b_instance = building_scene.instantiate()
 	if b_instance:
-		b_instance.building_data = building_preset # Injeta o recurso
+		b_instance.building_data = building_preset
 		b_instance.position = Vector3(coords.x, height, coords.y)
 		b_instance.grid_position = coords
 		b_instance.faction = faction
+		
+		b_instance.is_hq = is_hq_override
+		if is_hq_override:
+			b_instance.building_name = "HQ"
+			b_instance.max_capture_points = 20
+			
 		add_child(b_instance)
 		active_buildings[coords] = b_instance
+		print("Spawned structure: ", b_instance.building_name, " at ", coords)
 		return b_instance
 	return null
 

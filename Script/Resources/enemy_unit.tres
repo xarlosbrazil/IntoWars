@@ -5,10 +5,7 @@
 
 [resource]
 script = ExtResource("1_0vyhq")
-unit_name = "Enemy"
+unit_name = "Enemy Unit"
 sprite_frame_a = ExtResource("2_c6ae4")
 sprite_frame_b = ExtResource("2_c6ae4")
-max_hp = 6
-movement_range = 4
-attack_damage = 2
 metadata/_custom_type_script = "uid://cw7mbmuk7g4gf"

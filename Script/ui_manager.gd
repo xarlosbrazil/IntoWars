@@ -303,8 +303,8 @@ func create_combat_ui(parent: CanvasLayer) -> void:
 
 # --- NOVO: EXECUÇÃO DA ANIMAÇÃO DE COMBATE 2D ---
 # Injeta as texturas, abre o painel, executa a investida do frame esquerdo contra o direito e fecha [1]
+# --- EXECUÇÃO DA ANIMAÇÃO DE COMBATE 2D ---
 func play_combat_animation(attacker, victim) -> Tween:
-	# Pega as texturas das fichas de recursos, ou usa a textura atual do boneco 3D como fallback
 	var tex_a = attacker.unit_data.get("sprite_frame_a") if attacker.unit_data else null
 	var tex_v = victim.unit_data.get("sprite_frame_a") if victim.unit_data else null
 	
@@ -318,10 +318,8 @@ func play_combat_animation(attacker, victim) -> Tween:
 	attacker_texture.texture = tex_a
 	victim_texture.texture = tex_v
 	
-	# Abre a interface na tela
 	combat_panel.visible = true
 	
-	# Calcula as posições dos sprites centralizados com base no espaçamento horizontal (combat_spacing)
 	var center = combat_ui_size / 2.0
 	
 	var attacker_start_pos = Vector2(
@@ -336,20 +334,17 @@ func play_combat_animation(attacker, victim) -> Tween:
 	attacker_rect_panel.position = attacker_start_pos
 	victim_rect_panel.position = victim_start_pos
 	
-	# A investida física do atacante desloca o painel dele para a direita (+X)
 	var lunge_pos_x = attacker_start_pos.x + combat_lunge_distance_2d
 	
-	var tween = create_tween().set_sequence()
+	# CORREÇÃO: Removido o .set_sequence() que causava a quebra na engine 4.7
+	var tween = create_tween()
 	
-	# Passo A: Investe rapidamente contra o alvo (EASE_OUT) [1]
 	var lunge_time = combat_anim_duration * 0.35
 	tween.tween_property(attacker_rect_panel, "position:x", lunge_pos_x, lunge_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	
-	# Passo B: Retorna para sua coordenada original (EASE_IN_OUT) [1]
 	var return_time = combat_anim_duration * 0.65
 	tween.tween_property(attacker_rect_panel, "position:x", attacker_start_pos.x, return_time).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	
-	# Fecha o painel de combate quando a animação terminar
 	tween.finished.connect(func():
 		combat_panel.visible = false
 	)

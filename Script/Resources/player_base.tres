@@ -1,10 +1,10 @@
 [gd_resource type="Resource" script_class="BuildingData" format=3 uid="uid://c88inuh3t5tri"]
 
 [ext_resource type="Script" uid="uid://kxyb1rf8o013" path="res://Script/bulding_data.gd" id="1_yblv7"]
-[ext_resource type="Texture2D" uid="uid://bhqp6740iqp7e" path="res://Assets/castle.png" id="2_wbl7i"]
+[ext_resource type="Texture2D" uid="uid://e0slf5ulgu0a" path="res://icon.svg" id="2_wbl7i"]
 
 [resource]
 script = ExtResource("1_yblv7")
-building_name = "Enemy City"
+building_name = "Player HQ"
 sprite_texture = ExtResource("2_wbl7i")
 metadata/_custom_type_script = "uid://kxyb1rf8o013"

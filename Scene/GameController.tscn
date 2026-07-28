@@ -1,7 +1,9 @@
 [gd_scene format=3 uid="uid://baxfu3dm3fcsx"]
 
 [ext_resource type="Script" uid="uid://ca2ra615e314t" path="res://Script/game_controller.gd" id="1_l2gqs"]
+[ext_resource type="Resource" uid="uid://ci122anrn7jim" path="res://Script/Resources/player_unit.tres" id="2_armqc"]
 [ext_resource type="Script" uid="uid://dhoskytc6klyf" path="res://Script/input_handler.gd" id="2_y5yvd"]
+[ext_resource type="Resource" uid="uid://cfieafsmav4hq" path="res://Script/Resources/enemy_unit.tres" id="3_dihfm"]
 [ext_resource type="Script" uid="uid://btw42f1mpbvwp" path="res://Script/grid_manager.gd" id="3_m12nb"]
 [ext_resource type="Resource" uid="uid://c88inuh3t5tri" path="res://Script/Resources/player_base.tres" id="4_3a0bk"]
 [ext_resource type="PackedScene" uid="uid://q7lj81sgvu7j" path="res://Scene/Unit.tscn" id="4_nuatd"]
@@ -15,8 +17,8 @@
 script = ExtResource("1_l2gqs")
 camera_pivot = NodePath("CameraPivot")
 drag_sensitivity = 0.5
-player_mech_preset = ExtResource("4_3a0bk")
-enemy_scout_preset = ExtResource("5_cawvw")
+player_mech_preset = ExtResource("2_armqc")
+enemy_scout_preset = ExtResource("3_dihfm")
 player_hq_preset = ExtResource("4_3a0bk")
 enemy_hq_preset = ExtResource("5_cawvw")
 neutral_city_preset = ExtResource("6_r1ol7")
@@ -46,6 +48,8 @@ tooltip_content_margin_x = 26
 tooltip_content_margin_y = 16
 sprite_box_minimum_size = Vector2(96, 96)
 hbox_separation = 16
+combat_anim_duration = 1.05
+combat_lunge_distance_2d = 60.0
 
 [node name="CameraPivot" type="Node3D" parent="." unique_id=747861461]
 transform = Transform3D(0.70710677, 0, 0.70710677, 0, 1, 0, -0.70710677, 0, 0.70710677, 2.5, 0, 2.5)

@@ -29,41 +29,71 @@ var base_offset_y: float = 0.0
 
 
 func _ready() -> void:
-	# Programação Defensiva: Só consome do recurso se o valor não for nulo (Nil) [1, 2]
-	if unit_data:
-		var d_name = unit_data.get("unit_name")
-		if d_name != null: unit_name = d_name
-		
-		var d_max_hp = unit_data.get("max_hp")
-		if d_max_hp != null: max_hp = d_max_hp
-		
-		var d_move = unit_data.get("movement_range")
-		if d_move != null: movement_range = d_move
-		
-		var d_dmg = unit_data.get("attack_damage")
-		if d_dmg != null: attack_damage = d_dmg
-		
-		var d_range = unit_data.get("attack_range")
-		if d_range != null: attack_range = d_range
-		
-		# Define a textura inicial (Frame A) se presente
-		var d_tex_a = unit_data.get("sprite_frame_a")
-		var sprite = get_node_or_null("Sprite3D")
-		if sprite and sprite is Sprite3D and d_tex_a != null:
-			sprite.texture = d_tex_a
-			
-	current_hp = max_hp
+	# GARANTIA FÍSICA: Força visibilidade e escala
+	visible = true
+	scale = Vector3.ONE
+
+	var sprite: Sprite3D = _find_sprite_recursive(self)
 	
-	var sprite = get_node_or_null("Sprite3D")
-	if sprite and sprite is Sprite3D:
+	print("DEBUG [Unit ready]: Name = ", name, " | Resource = ", unit_data, " | Sprite3D found = ", sprite != null)
+	
+	if sprite:
+		# GARANTIA DE POSICIONAMENTO E ESCALA
+		sprite.position = Vector3.ZERO
+		sprite.scale = Vector3.ONE
+		sprite.pixel_size = 0.01
+		
+		# GARANTIA DE ILUMINAÇÃO: Desliga a reação à sombra
+		sprite.shaded = false
+		
+		if unit_data:
+			var d_name = unit_data.get("unit_name")
+			if d_name != null and str(d_name) != "": 
+				unit_name = str(d_name)
+			
+			var d_max_hp = unit_data.get("max_hp")
+			if d_max_hp != null: 
+				max_hp = int(d_max_hp)
+			
+			var d_move = unit_data.get("movement_range")
+			if d_move != null: 
+				movement_range = int(d_move)
+			
+			var d_dmg = unit_data.get("attack_damage")
+			if d_dmg != null: 
+				attack_damage = int(d_dmg)
+			
+			var d_range = unit_data.get("attack_range")
+			if d_range != null: 
+				attack_range = int(d_range)
+			
+			var d_tex_a = unit_data.get("sprite_frame_a")
+			if d_tex_a != null and d_tex_a is Texture2D:
+				sprite.texture = d_tex_a
+				
+		if sprite.texture == null:
+			sprite.texture = load("res://icon.svg")
+			
 		sprite.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 		if sprite.texture:
 			sprite.offset = Vector2(0, sprite.texture.get_size().y / 2.0)
 			base_offset_y = sprite.offset.y
+			
+	current_hp = max_hp
+
+
+# Função utilitária de busca recursiva profunda na árvore de nós
+func _find_sprite_recursive(node: Node) -> Sprite3D:
+	if node is Sprite3D:
+		return node
+	for child in node.get_children():
+		var result = _find_sprite_recursive(child)
+		if result:
+			return result
+	return null
 
 
 func _process(delta: float) -> void:
-	# Executa o ciclo de animação de 2 frames de forma segura [2]
 	if unit_data:
 		var frame_a = unit_data.get("sprite_frame_a")
 		var frame_b = unit_data.get("sprite_frame_b")
@@ -74,8 +104,8 @@ func _process(delta: float) -> void:
 				animation_timer = 0.0
 				is_frame_a = not is_frame_a
 				
-				var sprite = get_node_or_null("Sprite3D")
-				if sprite and sprite is Sprite3D:
+				var sprite = _find_sprite_recursive(self)
+				if sprite:
 					if is_frame_a:
 						sprite.texture = frame_a
 						sprite.offset.y = base_offset_y
