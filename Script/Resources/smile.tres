@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="UnitData" format=3 uid="uid://cfieafsmav4hq"]
+
+[ext_resource type="Script" uid="uid://cw7mbmuk7g4gf" path="res://Script/unit_data.gd" id="1_0vyhq"]
+[ext_resource type="Texture2D" uid="uid://bq374ttgkc3ns" path="res://Assets/slime1.png" id="2_86uu2"]
+[ext_resource type="Texture2D" uid="uid://cjdfp7y7gupyc" path="res://Assets/slime2.png" id="3_vfodj"]
+
+[resource]
+script = ExtResource("1_0vyhq")
+unit_name = "Slime"
+sprite_frame_a = ExtResource("2_86uu2")
+sprite_frame_b = ExtResource("3_vfodj")
+cost = 60
+metadata/_custom_type_script = "uid://cw7mbmuk7g4gf"

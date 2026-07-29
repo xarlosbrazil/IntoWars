@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://ca2ra615e314t" path="res://Script/game_controller.gd" id="1_l2gqs"]
 [ext_resource type="Resource" uid="uid://ci122anrn7jim" path="res://Script/Resources/player_unit.tres" id="2_armqc"]
 [ext_resource type="Script" uid="uid://dhoskytc6klyf" path="res://Script/input_handler.gd" id="2_y5yvd"]
-[ext_resource type="Resource" uid="uid://cfieafsmav4hq" path="res://Script/Resources/enemy_unit.tres" id="3_dihfm"]
+[ext_resource type="Resource" uid="uid://cfieafsmav4hq" path="res://Script/Resources/smile.tres" id="3_dihfm"]
 [ext_resource type="Script" uid="uid://btw42f1mpbvwp" path="res://Script/grid_manager.gd" id="3_m12nb"]
 [ext_resource type="Resource" uid="uid://c88inuh3t5tri" path="res://Script/Resources/player_base.tres" id="4_3a0bk"]
 [ext_resource type="PackedScene" uid="uid://q7lj81sgvu7j" path="res://Scene/Unit.tscn" id="4_nuatd"]
@@ -11,7 +11,19 @@
 [ext_resource type="PackedScene" uid="uid://wahgb3qq00wb" path="res://Scene/Building.tscn" id="5_d3lad"]
 [ext_resource type="Script" uid="uid://cob2qyne8o7ud" path="res://Script/ui_manager.gd" id="6_2n0i6"]
 [ext_resource type="Resource" uid="uid://j6exbdc4g8sr" path="res://Script/Resources/neutral_city.tres" id="6_r1ol7"]
+[ext_resource type="Resource" uid="uid://ddu26jg0qdtd1" path="res://Script/Resources/mech.tres" id="7_dihfm"]
 [ext_resource type="Script" uid="uid://58f2kfxmj5yg" path="res://Script/ai_controller.gd" id="7_y5yvd"]
+
+[sub_resource type="Sky" id="Sky_dihfm"]
+
+[sub_resource type="Environment" id="Environment_tyceg"]
+background_mode = 1
+background_color = Color(0.3529412, 0.5529412, 0.8509804, 1)
+sky = SubResource("Sky_dihfm")
+ambient_light_source = 2
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.5
+reflected_light_source = 2
 
 [node name="GameController" type="Node3D" unique_id=869262525 node_paths=PackedStringArray("camera_pivot")]
 script = ExtResource("1_l2gqs")
@@ -22,6 +34,7 @@ enemy_scout_preset = ExtResource("3_dihfm")
 player_hq_preset = ExtResource("4_3a0bk")
 enemy_hq_preset = ExtResource("5_cawvw")
 neutral_city_preset = ExtResource("6_r1ol7")
+shop_catalog = Array[Resource]([ExtResource("7_dihfm"), ExtResource("2_armqc")])
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=557775351]
 transform = Transform3D(1, 0, 0, 0, 0.7890781, 0.61429286, 0, -0.61429286, 0.7890781, 0, 1.0948137, 1.2447594)
@@ -46,10 +59,14 @@ script = ExtResource("6_2n0i6")
 tooltip_border_color = Color(1, 1, 1, 1)
 tooltip_content_margin_x = 26
 tooltip_content_margin_y = 16
+tooltip_minimum_size = Vector2(400, 270)
 sprite_box_minimum_size = Vector2(96, 96)
 hbox_separation = 16
 combat_anim_duration = 1.05
 combat_lunge_distance_2d = 60.0
+hud_font_size = 20
+shop_popup_font_size = 32
+tooltip_font_size = 28
 
 [node name="CameraPivot" type="Node3D" parent="." unique_id=747861461]
 transform = Transform3D(0.70710677, 0, 0.70710677, 0, 1, 0, -0.70710677, 0, 0.70710677, 2.5, 0, 2.5)
@@ -61,3 +78,6 @@ size = 10.0
 
 [node name="AIController" type="Node3D" parent="." unique_id=183364085]
 script = ExtResource("7_y5yvd")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=334226324]
+environment = SubResource("Environment_tyceg")

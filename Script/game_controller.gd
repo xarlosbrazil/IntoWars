@@ -41,7 +41,11 @@ var current_state: TurnState = TurnState.PLAYER_TURN
 @export var player_hq_preset: Resource
 @export var enemy_hq_preset: Resource
 @export var neutral_city_preset: Resource
-
+# --- SHOP CATALOG (BASE) ---
+@export_group("Shop")
+## Arraste aqui quantos UnitData (.tres) quiser. Cada um vira um botão comprável na loja,
+## usando o "cost" definido dentro do próprio recurso UnitData.
+@export var shop_catalog: Array[Resource] = []
 
 # --- GAMEPLAY & STATE VARIABLES ---
 var player_funds: int = 0
@@ -79,6 +83,7 @@ func _ready() -> void:
 	setup_match_units_and_buildings()
 	
 	ui_manager.setup_hud(grid_manager.unit_spawn_cost)
+	ui_manager.setup_shop(shop_catalog)
 	
 	input_handler.tile_clicked.connect(_on_tile_clicked)
 	input_handler.tile_hovered.connect(_on_tile_hovered)
@@ -87,6 +92,7 @@ func _ready() -> void:
 	ui_manager.undo_requested.connect(undo_last_move)
 	ui_manager.capture_requested.connect(execute_capture_action)
 	ui_manager.deploy_requested.connect(execute_deploy_action)
+	ui_manager.shop_purchase_requested.connect(execute_shop_purchase)
 	
 	change_state(TurnState.ENEMY_PLAN)
 
@@ -199,6 +205,7 @@ func change_state(new_state: TurnState) -> void:
 func ui_layer_state_update(state_name: String, is_player: bool) -> void:
 	var display_text = "TURN: " + str(turn_count) + " (" + state_name + ")"
 	ui_manager.update_state_visuals(display_text, player_funds, is_player)
+	ui_manager.update_shop_affordability(player_funds)
 
 
 # --- SPAWNER DA INVASÃO INIMIGA (WAVE SYSTEM) ---
@@ -338,7 +345,9 @@ func _try_select_building(coords: Vector2i) -> bool:
 			clear_selection()
 			selected_building_coords = coords
 			ui_manager.update_deploy_button(player_funds < grid_manager.unit_spawn_cost)
+			ui_manager.update_shop_affordability(player_funds)
 			ui_manager.update_selection_visuals(null, building)
+			ui_manager.show_shop_popup(building)
 			grid_manager.set_tile_base_state(coords, Color(0.2, 0.8, 0.2), 0.35, current_hovered_tile)
 			return true
 	return false
@@ -695,6 +704,43 @@ func execute_deploy_action() -> void:
 		player_funds -= grid_manager.unit_spawn_cost
 	clear_selection()
 
+# --- SHOP (BASE): compra unidades do shop_catalog no prédio selecionado ---
+func execute_shop_purchase(catalog_index: int) -> void:
+	if selected_building_coords == Vector2i(-999, -999):
+		return
+	if catalog_index < 0 or catalog_index >= shop_catalog.size():
+		return
+	
+	var preset = shop_catalog[catalog_index]
+	if not preset:
+		return
+	
+	var unit_cost = preset.get("cost")
+	if unit_cost == null:
+		unit_cost = 0
+	unit_cost = int(unit_cost)
+	
+	if player_funds < unit_cost:
+		return
+	
+	var new_unit = spawn_new_unit_at(selected_building_coords, preset, false)
+	if new_unit:
+		new_unit.has_acted_this_turn = true
+		player_funds -= unit_cost
+		ui_layer_state_update(_current_state_name(), current_state == TurnState.PLAYER_TURN)
+	
+	clear_selection()
+
+
+# Auxiliar: retorna o nome de exibição do estado atual (mesmo texto usado em change_state)
+func _current_state_name() -> String:
+	match current_state:
+		TurnState.PLAYER_TURN:
+			return "PLAYER TURN"
+		TurnState.ENEMY_RESOLVE:
+			return "RESOLVING IA"
+		_:
+			return "IA PLANNING"
 
 # --- GENERAL HELPERS ---
 
@@ -728,6 +774,7 @@ func clear_selection() -> void:
 	current_reachable_tiles.clear()
 	current_attackable_tiles.clear()
 	ui_manager.update_selection_visuals(null, null)
+	ui_manager.hide_shop_popup()
 	update_unit_sprites_modulations()
 	ui_manager.update_deploy_button(true)
 	ui_manager.update_capture_button(true)
