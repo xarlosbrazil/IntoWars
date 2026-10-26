@@ -7,4 +7,5 @@
 script = ExtResource("1_yblv7")
 building_name = "Player HQ"
 sprite_texture = ExtResource("2_wbl7i")
+pixel_size = 0.01
 metadata/_custom_type_script = "uid://kxyb1rf8o013"

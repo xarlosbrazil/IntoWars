@@ -24,6 +24,7 @@ var has_acted_this_turn: bool = false
 # --- 2-FRAME ANIMATION VARIABLES ---
 var animation_timer: float = 0.0
 var animation_interval: float = 0.35 
+var hop_pixel_offset: float = 2.0
 var is_frame_a: bool = true
 var base_offset_y: float = 0.0
 
@@ -41,10 +42,30 @@ func _ready() -> void:
 		# GARANTIA DE POSICIONAMENTO E ESCALA
 		sprite.position = Vector3.ZERO
 		sprite.scale = Vector3.ONE
-		sprite.pixel_size = 0.01
+		
+		# GARANTIA PIXEL ART 32x32: Filtro Nearest nítido e escala proporcional
+		sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		sprite.pixel_size = 0.025 # Padrão proporcional para 32x32 px
 		
 		# GARANTIA DE ILUMINAÇÃO: Desliga a reação à sombra
 		sprite.shaded = false
+		
+		if unit_data:
+			var d_ps = unit_data.get("pixel_size")
+			if d_ps != null and float(d_ps) > 0.0:
+				sprite.pixel_size = float(d_ps)
+				
+			var d_y = unit_data.get("sprite_offset_y")
+			if d_y != null:
+				sprite.position = Vector3(0, float(d_y), 0)
+
+			var d_hop = unit_data.get("hop_pixel_offset")
+			if d_hop != null:
+				hop_pixel_offset = float(d_hop)
+
+			var d_interval = unit_data.get("animation_interval")
+			if d_interval != null and float(d_interval) > 0.0:
+				animation_interval = float(d_interval)
 		
 		if unit_data:
 			var d_name = unit_data.get("unit_name")
@@ -111,7 +132,7 @@ func _process(delta: float) -> void:
 						sprite.offset.y = base_offset_y
 					else:
 						sprite.texture = frame_b
-						sprite.offset.y = base_offset_y + 12.0 
+						sprite.offset.y = base_offset_y + hop_pixel_offset 
 
 
 func update_ai_target_tile() -> void:
@@ -119,11 +140,12 @@ func update_ai_target_tile() -> void:
 
 
 func take_damage(amount: int) -> void:
-	current_hp = clamp(current_hp - amount, 0, max_hp)
+	var result: Dictionary = CombatRules.calculate_damage_result(current_hp, max_hp, amount)
+	current_hp = result["new_hp"]
 	hp_changed.emit(current_hp)
 	
-	print(unit_name, " took ", amount, " damage. Current HP: ", current_hp)
-	if current_hp <= 0:
+	print(unit_name, " took ", result["damage_applied"], " damage. Current HP: ", current_hp)
+	if result["is_defeated"]:
 		die()
 
 

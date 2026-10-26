@@ -3,12 +3,16 @@ class_name GridInputHandler
 
 signal tile_clicked(coords: Vector2i)
 signal tile_hovered(coords: Vector2i)
+signal right_clicked()
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		var coords = get_tile_at_mouse_position(event.position)
-		if coords != Vector2i(-999, -999):
-			tile_clicked.emit(coords)
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			var coords = get_tile_at_mouse_position(event.position)
+			if coords != Vector2i(-999, -999):
+				tile_clicked.emit(coords)
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			right_clicked.emit()
 			
 	elif event is InputEventMouseMotion:
 		var coords = get_tile_at_mouse_position(event.position)

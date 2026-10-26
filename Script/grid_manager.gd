@@ -61,6 +61,12 @@ const Pathfinder = preload("res://Script/grid_pathfinder.gd")
 
 # --- VISUAL CONFIGURATIONS ---
 @export_group("Block Visuals")
+## Tamanho dos tiles (largura e profundidade) no espaço 3D.
+@export_range(0.5, 3.0, 0.05) var tile_size: float = 1.0:
+	set(val):
+		tile_size = val
+		update_shader_settings()
+
 @export var tile_color: Color = Color(0.35, 0.35, 0.35):
 	set(val):
 		tile_color = val
@@ -110,6 +116,20 @@ const Pathfinder = preload("res://Script/grid_pathfinder.gd")
 @export var unit_scene: PackedScene
 @export var building_scene: PackedScene
 
+# --- CUSTOM 2.5D TILE SPRITES ---
+@export_group("Custom 2.5D Tile Sprites")
+## Se ativo, oculta as caixas verdes 3D procedurais e exibe os sprites 2.5D artesanais completos.
+@export var hide_procedural_boxes: bool = true
+## Sprite 2.5D padrão para todos os tiles do tabuleiro (ex: Bloco de Grama 32x32).
+@export var default_tile_sprite: Texture2D
+
+# --- TILE TOP OVERLAYS ---
+@export_group("Tile Top Overlays (Test)")
+## Arraste aqui uma textura 2.5D de topo (ex: slime_pool.png) para testar no tabuleiro.
+@export var test_tile_overlay_texture: Texture2D
+## Coordenada de grid para aplicar a textura de teste de topo.
+@export var test_tile_overlay_coords: Vector2i = Vector2i(2, 2)
+
 
 # --- GRID DATA STRUCTURES ---
 var grid_cells: Dictionary = {}
@@ -128,6 +148,16 @@ func update_shader_settings() -> void:
 		block_material.set_shader_parameter("tile_color", tile_color)
 		block_material.set_shader_parameter("border_color", border_color)
 		block_material.set_shader_parameter("border_thickness", border_thickness)
+		block_material.set_shader_parameter("tile_size", tile_size)
+	for block in grid_cells.values():
+		if block and is_instance_valid(block):
+			var mesh_instance = block.get_node_or_null("MeshInstance3D")
+			if mesh_instance and mesh_instance.material_override:
+				var mat: ShaderMaterial = mesh_instance.material_override
+				mat.set_shader_parameter("tile_color", tile_color)
+				mat.set_shader_parameter("border_color", border_color)
+				mat.set_shader_parameter("border_thickness", border_thickness)
+				mat.set_shader_parameter("tile_size", tile_size)
 
 
 func create_grid_material() -> void:
@@ -139,7 +169,13 @@ func create_grid_material() -> void:
 	uniform vec4 tile_color : source_color;
 	uniform vec4 border_color : source_color;
 	uniform float border_thickness;
+	uniform float tile_size = 1.0;
 	uniform float alpha : hint_range(0.0, 1.0) = 1.0;
+	
+	uniform float neighbor_px = 0.0;
+	uniform float neighbor_nx = 0.0;
+	uniform float neighbor_pz = 0.0;
+	uniform float neighbor_nz = 0.0;
 	
 	uniform vec4 highlight_color : source_color = vec4(1.0, 1.0, 1.0, 1.0);
 	uniform float highlight_strength : hint_range(0.0, 1.0) = 0.0;
@@ -149,8 +185,18 @@ func create_grid_material() -> void:
 	void vertex() { local_pos = VERTEX; local_normal = NORMAL; }
 	void fragment() {
 		bool is_top_face = local_normal.y > 0.5;
-		float half_size = 0.5;
-		bool is_border = abs(local_pos.x) > (half_size - border_thickness) || abs(local_pos.z) > (half_size - border_thickness);
+		float half_size = tile_size * 0.5;
+		
+		float thick_px = mix(border_thickness, border_thickness * 0.5, neighbor_px);
+		float thick_nx = mix(border_thickness, border_thickness * 0.5, neighbor_nx);
+		float thick_pz = mix(border_thickness, border_thickness * 0.5, neighbor_pz);
+		float thick_nz = mix(border_thickness, border_thickness * 0.5, neighbor_nz);
+
+		bool is_border = (local_pos.x > half_size - thick_px) ||
+		                 (local_pos.x < -half_size + thick_nx) ||
+		                 (local_pos.z > half_size - thick_pz) ||
+		                 (local_pos.z < -half_size + thick_nz);
+
 		vec3 base_color = tile_color.rgb;
 		if (is_top_face) { base_color = mix(base_color, highlight_color.rgb, highlight_strength * 0.6); }
 		if (is_top_face && is_border) { ALBEDO = border_color.rgb; } else { ALBEDO = base_color; }
@@ -194,6 +240,84 @@ func generate_board() -> void:
 			attempts += 1
 	else:
 		generate_ascii_board()
+
+	update_all_block_neighbors()
+
+	if test_tile_overlay_texture:
+		set_tile_top_texture(test_tile_overlay_coords, test_tile_overlay_texture)
+
+
+func update_all_block_neighbors() -> void:
+	for coords in grid_cells.keys():
+		var block = grid_cells[coords]
+		if not block or not is_instance_valid(block):
+			continue
+			
+		var height: float = block.get_meta("height")
+		var mesh_instance = block.get_node_or_null("MeshInstance3D")
+		if not mesh_instance or not mesh_instance.material_override:
+			continue
+			
+		var mat: ShaderMaterial = mesh_instance.material_override
+		
+		var px = coords + Vector2i(1, 0)
+		var nx = coords + Vector2i(-1, 0)
+		var pz = coords + Vector2i(0, 1)
+		var nz = coords + Vector2i(0, -1)
+		
+		var has_px = grid_cells.has(px) and abs(float(grid_cells[px].get_meta("height")) - height) < 0.01
+		var has_nx = grid_cells.has(nx) and abs(float(grid_cells[nx].get_meta("height")) - height) < 0.01
+		var has_pz = grid_cells.has(pz) and abs(float(grid_cells[pz].get_meta("height")) - height) < 0.01
+		var has_nz = grid_cells.has(nz) and abs(float(grid_cells[nz].get_meta("height")) - height) < 0.01
+		
+		mat.set_shader_parameter("neighbor_px", 1.0 if has_px else 0.0)
+		mat.set_shader_parameter("neighbor_nx", 1.0 if has_nx else 0.0)
+		mat.set_shader_parameter("neighbor_pz", 1.0 if has_pz else 0.0)
+		mat.set_shader_parameter("neighbor_nz", 1.0 if has_nz else 0.0)
+
+
+# Aplica uma textura de topo (Overlay 2.5D deitada) sobre um tile do tabuleiro (ex: Slime Pool, Terrenos Especializados)
+func set_tile_top_texture(coords: Vector2i, texture: Texture2D, pixel_size_override: float = 0.025) -> void:
+	if not grid_cells.has(coords):
+		return
+		
+	var block = grid_cells[coords]
+	var top_sprite: Sprite3D = block.get_node_or_null("TopOverlaySprite")
+	
+	if not texture:
+		if top_sprite:
+			top_sprite.queue_free()
+		return
+		
+	if not top_sprite:
+		top_sprite = Sprite3D.new()
+		top_sprite.name = "TopOverlaySprite"
+		top_sprite.rotation_degrees = Vector3(-90, 0, 0) # Deitado plano sobre o topo do bloco
+		top_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		top_sprite.shaded = false
+		block.add_child(top_sprite)
+		
+	top_sprite.texture = texture
+	top_sprite.pixel_size = pixel_size_override
+	var height: float = block.get_meta("height")
+	# Posiciona exatamente na superfície do topo do bloco 3D
+	top_sprite.position = Vector3(0.0, height / 2.0 + 0.001, 0.0)
+
+
+# Define um Sprite 2.5D Completo para um tile específico (ex: Slime Pool, Ruínas, Terrenos Customizados)
+func set_custom_tile_sprite(coords: Vector2i, texture: Texture2D, pixel_size_override: float = 0.025) -> void:
+	if not grid_cells.has(coords):
+		return
+	var block = grid_cells[coords]
+	var mesh_instance = block.get_node_or_null("MeshInstance3D")
+	var tile_sprite: Sprite3D = block.get_node_or_null("TileSprite")
+	
+	if texture and tile_sprite:
+		tile_sprite.texture = texture
+		tile_sprite.pixel_size = pixel_size_override
+		tile_sprite.visible = true
+		if mesh_instance and hide_procedural_boxes:
+			mesh_instance.visible = false
 
 
 func generate_ascii_board() -> void:
@@ -262,7 +386,7 @@ func get_height_from_noise(n_val: float) -> float:
 
 func spawn_block(x: int, z: int, height: float) -> void:
 	var block = StaticBody3D.new()
-	block.position = Vector3(x, height / 2.0, z)
+	block.position = Vector3(float(x) * tile_size, height / 2.0, float(z) * tile_size)
 	block.set_meta("grid_pos", Vector2i(x, z))
 	block.set_meta("base_color", Color.WHITE)
 	block.set_meta("base_strength", 0.0)
@@ -274,16 +398,32 @@ func spawn_block(x: int, z: int, height: float) -> void:
 	var mesh_instance = MeshInstance3D.new()
 	mesh_instance.name = "MeshInstance3D"
 	var box_mesh = BoxMesh.new()
-	box_mesh.size = Vector3(1, height, 1)
+	box_mesh.size = Vector3(tile_size, height, tile_size)
 	mesh_instance.mesh = box_mesh
 	mesh_instance.material_override = block_material.duplicate()
 	block.add_child(mesh_instance)
 
 	var collision_shape = CollisionShape3D.new()
 	var box_shape = BoxShape3D.new()
-	box_shape.size = Vector3(1, height, 1)
+	box_shape.size = Vector3(tile_size, height, tile_size)
 	collision_shape.shape = box_shape
 	block.add_child(collision_shape)
+
+	# 3. Sprite 2.5D do Tile Completo (Ilusão de profundidade artesanal)
+	var tile_sprite = Sprite3D.new()
+	tile_sprite.name = "TileSprite"
+	tile_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	tile_sprite.shaded = false
+	tile_sprite.pixel_size = 0.025
+	tile_sprite.position = Vector3(0.0, height / 2.0, 0.0)
+	tile_sprite.visible = false
+	block.add_child(tile_sprite)
+
+	if default_tile_sprite:
+		tile_sprite.texture = default_tile_sprite
+		tile_sprite.visible = true
+		if hide_procedural_boxes:
+			mesh_instance.visible = false
 
 
 # MODIFICADO: Função de spawn agora imprime alertas de diagnóstico se as cenas estiverem ausentes no editor
@@ -300,7 +440,7 @@ func spawn_building(coords: Vector2i, building_preset: Resource, faction: int, i
 	var b_instance = building_scene.instantiate()
 	if b_instance:
 		b_instance.building_data = building_preset
-		b_instance.position = Vector3(coords.x, height, coords.y)
+		b_instance.position = Vector3(float(coords.x) * tile_size, height, float(coords.y) * tile_size)
 		b_instance.grid_position = coords
 		b_instance.faction = faction
 		
@@ -324,7 +464,7 @@ func spawn_unit_node(coords: Vector2i, unit_preset: Resource, is_enemy: bool) ->
 	var unit_instance = unit_scene.instantiate()
 	if unit_instance:
 		unit_instance.unit_data = unit_preset # Injeta o recurso
-		unit_instance.position = Vector3(coords.x, height, coords.y)
+		unit_instance.position = Vector3(float(coords.x) * tile_size, height, float(coords.y) * tile_size)
 		unit_instance.grid_position = coords
 		unit_instance.is_enemy = is_enemy
 		add_child(unit_instance)
@@ -409,7 +549,7 @@ func move_unit_to_tile(unit, target_coords: Vector2i) -> Tween:
 	
 	var start_height = grid_cells[old_coords].get_meta("height") if grid_cells.has(old_coords) else unit.position.y
 	var target_height = grid_cells[target_coords].get_meta("height")
-	var target_pos = Vector3(target_coords.x, target_height, target_coords.y)
+	var target_pos = Vector3(float(target_coords.x) * tile_size, target_height, float(target_coords.y) * tile_size)
 	
 	var tween = create_tween().set_parallel(true)
 	tween.tween_property(unit, "position:x", target_pos.x, move_duration).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)

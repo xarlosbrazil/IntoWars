@@ -36,23 +36,45 @@ func plan_enemy_attacks() -> void:
 				)
 				await game_controller.walk_unit_along_path(enemy, path)
 				
-			# Agora na nova posição, calcula a direção para mirar o ataque
-			var diff = target_pos - enemy.grid_position
-			var dir = Vector2i.ZERO
-			if abs(diff.x) > abs(diff.y): 
-				dir.x = sign(diff.x)
-			else: 
-				dir.y = sign(diff.y)
-				
-			enemy.ai_attack_dir = dir
-			enemy.update_ai_target_tile()
+			# Agora na nova posição, verifica se existe um ALVO REAL (unidade do jogador ou estrutura) adjacente
+			var card_dirs = [Vector2i(1,0), Vector2i(-1,0), Vector2i(0,1), Vector2i(0,-1)]
+			var attack_target_tile = Vector2i.ZERO
+			var attack_dir = Vector2i.ZERO
 			
-			grid_m.set_tile_base_state(
-				enemy.ai_target_tile, 
-				grid_m.danger_highlight_color, 
-				grid_m.danger_highlight_strength, 
-				game_controller.current_hovered_tile
-			)
+			# Prioridade 1: Unidades do jogador adjacentes
+			for d in card_dirs:
+				var candidate = enemy.grid_position + d
+				if grid_m.active_units.has(candidate):
+					var u = grid_m.active_units[candidate]
+					if not u.is_enemy:
+						attack_target_tile = candidate
+						attack_dir = d
+						break
+			
+			# Prioridade 2: Prédios não-inimigos adjacentes (se não encontrou unidade)
+			if attack_target_tile == Vector2i.ZERO:
+				for d in card_dirs:
+					var candidate = enemy.grid_position + d
+					if grid_m.active_buildings.has(candidate):
+						var b = grid_m.active_buildings[candidate]
+						if b.faction != 2: # Não é da facção inimiga
+							attack_target_tile = candidate
+							attack_dir = d
+							break
+			
+			# Só define direção e ilumina perigo se HOUVER um alvo real ao alcance
+			if attack_target_tile != Vector2i.ZERO:
+				enemy.ai_attack_dir = attack_dir
+				enemy.ai_target_tile = attack_target_tile
+				grid_m.set_tile_base_state(
+					enemy.ai_target_tile, 
+					grid_m.danger_highlight_color, 
+					grid_m.danger_highlight_strength, 
+					game_controller.current_hovered_tile
+				)
+			else:
+				enemy.ai_attack_dir = Vector2i.ZERO
+				enemy.ai_target_tile = Vector2i.ZERO
 
 
 # Encontra o melhor bloco para o inimigo andar baseado na coordenada alvo
@@ -81,26 +103,24 @@ func execute_enemy_attacks() -> void:
 			enemies.append(unit)
 			
 	for enemy in enemies:
-		enemy.update_ai_target_tile()
+		if enemy.ai_target_tile == Vector2i.ZERO or enemy.ai_target_tile == Vector2i(-999, -999):
+			continue
+			
 		var target = enemy.ai_target_tile
-		
 		grid_m.set_tile_base_state(target, Color.WHITE, 0.0, game_controller.current_hovered_tile)
 		
 		if grid_m.active_units.has(target):
 			var victim = grid_m.active_units[target]
-			victim.take_damage(1)
-			
-			if victim == game_controller.selected_unit:
-				game_controller.ui_manager.update_selection_visuals(game_controller.selected_unit, null)
-				
-			if victim.current_hp <= 0:
-				grid_m.active_units.erase(target)
-		
-		# NOVA LÓGICA: IA ataca estruturas se elas estiverem na mira! [1]
+			if not victim.is_enemy:
+				victim.take_damage(1)
+				if victim == game_controller.selected_unit:
+					game_controller.ui_manager.update_selection_visuals(game_controller.selected_unit, null)
+				if victim.current_hp <= 0:
+					grid_m.active_units.erase(target)
 		elif grid_m.active_buildings.has(target):
 			var building = grid_m.active_buildings[target]
-			# Causa dano de captura (muda o domínio do prédio para a IA)
-			building.capture(2, 1) # Inimigo (facção 2) captura com força de 1 [1]
+			if building.faction != 2:
+				building.capture(2, 1)
 				
 		enemy.ai_attack_dir = Vector2i.ZERO
 		enemy.ai_target_tile = Vector2i.ZERO

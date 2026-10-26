@@ -33,12 +33,21 @@ func _ready() -> void:
 		# GARANTIA DE POSICIONAMENTO E ESCALA: Corrige qualquer erro de offset/escala salvo no editor por engano
 		sprite.position = Vector3.ZERO
 		sprite.scale = Vector3.ONE
-		sprite.pixel_size = 0.01 # Padrão de escala da engine
+		sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		sprite.pixel_size = 0.025 # Padrão de escala proporcional para artes 32x32
 		
 		# GARANTIA DE ILUMINAÇÃO: Desliga a reação à sombra para o sprite não ficar preto no vazio do cenário
 		sprite.shaded = false
 		
 		if building_data:
+			var d_ps = building_data.get("pixel_size")
+			if d_ps != null and float(d_ps) > 0.0:
+				sprite.pixel_size = float(d_ps)
+				
+			var d_y = building_data.get("sprite_offset_y")
+			if d_y != null:
+				sprite.position = Vector3(0, float(d_y), 0)
+				
 			building_name = building_data.get("building_name")
 			
 			if not is_hq:
@@ -101,15 +110,14 @@ func _find_sprite_recursive(node: Node) -> Sprite3D:
 
 
 func capture(capturing_faction: int, amount: int) -> void:
-	if faction == capturing_faction:
-		return
-		
-	current_capture_points = clamp(current_capture_points - amount, 0, max_capture_points)
+	var result: Dictionary = BuildingRules.process_capture_step(
+		faction, capturing_faction, current_capture_points, max_capture_points, amount
+	)
+	current_capture_points = result["capture_points"]
 	print(building_name, " capture progress: ", current_capture_points, "/", max_capture_points)
 	
-	if current_capture_points <= 0:
-		faction = capturing_faction
-		current_capture_points = max_capture_points
+	if result["was_captured"]:
+		faction = result["faction"]
 		print(building_name, " CAPTURED BY FACTION ", faction)
 		
 	update_visuals()

@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="BuildingData" format=3 uid="uid://joa5wbn2040e"]
+
+[ext_resource type="Script" uid="uid://kxyb1rf8o013" path="res://Script/bulding_data.gd" id="1_6ikur"]
+[ext_resource type="Texture2D" uid="uid://j4qlvg2d0fs6" path="res://Assets/slimepool.png" id="2_sw8xt"]
+
+[resource]
+script = ExtResource("1_6ikur")
+building_name = "Slime Pool"
+sprite_texture = ExtResource("2_sw8xt")
+pixel_size = 0.01
+metadata/_custom_type_script = "uid://kxyb1rf8o013"

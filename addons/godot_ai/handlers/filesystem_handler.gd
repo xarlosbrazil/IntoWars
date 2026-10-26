@@ -1,5 +1,5 @@
 @tool
-extends RefCounted
+extends "res://addons/godot_ai/handlers/command_handler.gd"
 
 const ErrorCodes := preload("res://addons/godot_ai/utils/error_codes.gd")
 const ScriptHandler := preload("res://addons/godot_ai/handlers/script_handler.gd")
@@ -14,6 +14,11 @@ const ScriptHandler := preload("res://addons/godot_ai/handlers/script_handler.gd
 ## always send a real reply before a DEFERRED_TIMEOUT is synthesised.
 const _SCAN_START_GRACE_MSEC := 750
 const _SCAN_SETTLE_MAX_MSEC := 28000
+
+## Sidecar the editor writes next to every imported resource. `reimport` reads
+## it to tell imported assets from files that merely have a filesystem entry
+## (see `_is_imported_resource`).
+const IMPORT_SIDECAR_SUFFIX := ".import"
 
 ## Shared single-flight latch for scan_filesystem. `is_scanning()` alone can't
 ## enforce single-flight: `EditorFileSystem.scan()` doesn't flip `is_scanning()`
@@ -135,7 +140,9 @@ func reimport(params: Dictionary) -> Dictionary:
 			"EditorFileSystem not available", false)
 
 	var reimported: Array[String] = []
+	var skipped_non_imported: Array[String] = []
 	var not_found: Array[String] = []
+	var imported_paths := PackedStringArray()
 
 	for path_variant in paths:
 		var path: String = str(path_variant)
@@ -146,19 +153,70 @@ func reimport(params: Dictionary) -> Dictionary:
 		if not FileAccess.file_exists(path):
 			not_found.append("%s (file does not exist)" % path)
 			continue
-		efs.update_file(path)
-		reimported.append(path)
+		if _is_imported_resource(path):
+			reimported.append(path)
+			imported_paths.append(path)
+		else:
+			## Non-imported resources still need their editor entry refreshed, but
+			## `update_file()` is not an import and must not be reported as one.
+			efs.update_file(path)
+			skipped_non_imported.append(path)
 
-	return {
-		"data": {
-			"reimported": reimported,
-			"not_found": not_found,
-			"reimported_count": reimported.size(),
-			"not_found_count": not_found.size(),
-			"undoable": false,
-			"reason": "Reimport is a file system operation",
-		}
+	## `update_file()` is conditional: for an unchanged imported asset it can
+	## return without running an importer, while the old response still claimed
+	## success. `reimport_files()` is the editor API for an explicit forced
+	## reimport, including unchanged sources and changed post-import scripts.
+	## Batch once so the editor can settle the requested imports together.
+	if not imported_paths.is_empty():
+		efs.reimport_files(imported_paths)
+
+	var data := {
+		"reimported": reimported,
+		"skipped_non_imported": skipped_non_imported,
+		"not_found": not_found,
+		"reimported_count": reimported.size(),
+		"skipped_non_imported_count": skipped_non_imported.size(),
+		"not_found_count": not_found.size(),
+		"undoable": false,
+		"reason": "Reimport is a file system operation",
 	}
+	## Only when it applies: a hint on every call would cost tokens on the
+	## all-assets path this op is actually for.
+	if not skipped_non_imported.is_empty():
+		data["skipped_non_imported_hint"] = (
+			"%d path(s) are not imported resources. Their editor filesystem entry was "
+			+ "refreshed, but no import ran — a success here is not evidence that a "
+			+ "script parsed or that diagnostics were produced. Use script_patch/"
+			+ "script_create for GDScript diagnostics, or filesystem_manage(op=\"scan\") "
+			+ "for an asset the editor has not imported yet."
+		) % skipped_non_imported.size()
+	return {"data": data}
+
+
+## #778/#1147: `update_file()` registers a path with the resource pipeline; it
+## only runs an *import* when Godot detects a changed imported resource.
+## Scripts, scenes and hand-written
+## `.tres` are not imported resources, so listing them under `reimported` reads
+## as proof that a parse or import ran when nothing did.
+##
+## The `.import` sidecar is the editor's own record that a path goes through
+## the import pipeline, so it decides the split. An extension allow-list was
+## rejected: importers come and go with plugins, so the list would drift out of
+## agreement with the editor it claims to describe.
+##
+## Known edge: an asset the editor has never imported (just written, no scan
+## yet) has no sidecar and reports as non-imported. That is accurate at the
+## moment of the call — `update_file()` did not import it either — and the
+## hint names `scan` as the way through.
+##
+## Non-imported paths still receive `update_file()` because refreshing an
+## externally-edited `.tscn`/`.tres` is a real use of this op. Imported paths
+## go through `reimport_files()` so every entry under `reimported` corresponds
+## to an explicit forced-import request rather than a conditional refresh.
+static func _is_imported_resource(path: String) -> bool:
+	if path.ends_with(IMPORT_SIDECAR_SUFFIX):
+		return false  ## The sidecar itself is not an imported resource.
+	return FileAccess.file_exists(path + IMPORT_SIDECAR_SUFFIX)
 
 
 ## Force a full EditorFileSystem scan and wait for it to settle. This is the
@@ -217,6 +275,14 @@ static func _finish_scan_deferred(
 	request_id: String,
 	efs: EditorFileSystem,
 ) -> void:
+	var work := ScriptWork.begin("scan_filesystem")
+	await _settle_scan(connection, request_id, efs)
+	ScriptWork.finish(work)
+
+
+static func _settle_scan(
+	connection: McpConnection, request_id: String, efs: EditorFileSystem,
+) -> void:
 	if not is_instance_valid(connection):
 		return
 	var tree := connection.get_tree()
@@ -266,3 +332,19 @@ static func _finish_scan_deferred(
 			"reason": "Filesystem scan is an editor operation",
 		}
 	})
+
+
+## Resource-group mutations use read-only deferred discovery before disk effects.
+const Mutation := preload("res://addons/godot_ai/handlers/filesystem_mutation.gd")
+
+
+func move_file(params: Dictionary) -> Dictionary:
+	return Mutation.start(_connection, params, "move")
+
+
+func rename_file(params: Dictionary) -> Dictionary:
+	return Mutation.start(_connection, params, "rename")
+
+
+func remove_file(params: Dictionary) -> Dictionary:
+	return Mutation.start(_connection, params, "remove")

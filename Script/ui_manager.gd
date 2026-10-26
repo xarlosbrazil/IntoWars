@@ -97,6 +97,8 @@ signal shop_purchase_requested(catalog_index: int)
 @export_range(0, 20, 1) var shop_button_separation: int = 4
 ## Altura de cada botão da loja.
 @export_range(20, 60, 1) var shop_button_height: int = 28
+## Tamanho máximo do ícone/miniatura da unidade no botão da loja.
+@export_range(16, 48, 1) var shop_button_icon_size: int = 24
 ## Margem interna (padding) do popup em todos os lados.
 @export_range(0, 30, 1) var shop_popup_content_margin: int = 8
 ## Cor de fundo do popup da loja.
@@ -125,6 +127,59 @@ signal shop_purchase_requested(catalog_index: int)
 @export_range(8, 40, 1) var shop_popup_font_size: int = 15
 ## Tamanho de fonte usado no tooltip de unidade/prédio (nome e stats).
 @export_range(8, 40, 1) var tooltip_font_size: int = 14
+
+@export_group("HP Bar Overlay")
+## Altura em unidades 3D (eixo Y) para posicionar a barra de vida acima da unidade.
+@export_range(0.5, 4.0, 0.1) var hp_bar_y_offset: float = 1.8
+## Largura em pixels de cada bloco/pip de HP individual (estilo Into the Breach).
+@export_range(4, 30, 1) var hp_pip_width: int = 10
+## Altura em pixels de cada bloco/pip de HP individual.
+@export_range(4, 20, 1) var hp_pip_height: int = 6
+## Espaçamento em pixels entre cada bloco de HP.
+@export_range(0, 10, 1) var hp_pip_separation: int = 2
+## Cor do bloco preenchido (vida ativa) para unidades aliadas.
+@export var hp_pip_player_color: Color = Color(0.2, 0.85, 0.25)
+## Cor do bloco preenchido (vida ativa) para unidades inimigas.
+@export var hp_pip_enemy_color: Color = Color(0.95, 0.25, 0.25)
+## Cor do bloco vazio (vida perdida).
+@export var hp_pip_empty_color: Color = Color(0.12, 0.12, 0.12, 0.75)
+## Cor da borda em volta de cada bloco de HP.
+@export var hp_pip_border_color: Color = Color(0.0, 0.0, 0.0, 0.9)
+
+# --- CUSTOM VISUAL SKINS (ASSETS OVERRIDES) ---
+@export_group("Custom Visual Skins (Assets Overrides)")
+## Tema global opcional do Godot (.theme). Se atribuído, sobrescreve o estilo geral de toda a interface.
+@export var custom_ui_theme: Theme
+## Fonte global opcional (.ttf / .otf / .font) para substituir a fonte padrão dos rótulos e botões.
+@export var custom_font: Font
+
+@export_subgroup("HUD Panel Skin")
+## Textura de moldura customizada para o painel de HUD no canto superior esquerdo (suporta 9-Slice).
+@export var hud_panel_skin_texture: Texture2D
+## Margens de 9-Slice (Esquerda, Topo, Direita, Fundo) para a moldura do painel de HUD.
+@export var hud_panel_skin_margins: Rect2i = Rect2i(4, 4, 4, 4)
+
+@export_subgroup("Shop Popup Skin")
+## Textura de moldura customizada para o popup da loja ancorado no mundo 3D (suporta 9-Slice).
+@export var shop_popup_skin_texture: Texture2D
+## Margens de 9-Slice para a moldura do popup da loja.
+@export var shop_popup_skin_margins: Rect2i = Rect2i(4, 4, 4, 4)
+
+@export_subgroup("Tooltip Skin")
+## Textura de fundo customizada para o card de inspeção (Tooltip de hover) (suporta 9-Slice).
+@export var tooltip_skin_texture: Texture2D
+## Margens de 9-Slice para a moldura do tooltip.
+@export var tooltip_skin_margins: Rect2i = Rect2i(4, 4, 4, 4)
+
+@export_subgroup("HP Bar Skins & Override")
+## Cena customizada (.tscn) opcional para substituir fisicamente a barra de vida flutuante.
+@export var custom_hp_bar_scene: PackedScene
+## Textura de fundo/trilho para a barra de vida flutuante.
+@export var hp_bar_bg_texture: Texture2D
+## Textura de preenchimento para a barra de vida das unidades do Jogador (Aliadas).
+@export var hp_bar_player_fill_texture: Texture2D
+## Textura de preenchimento para a barra de vida das unidades do Inimigo.
+@export var hp_bar_enemy_fill_texture: Texture2D
 
 
 # --- INTERNAL VARIABLES ---
@@ -181,6 +236,8 @@ func _process(_delta: float) -> void:
 func setup_hud(spawn_cost: int) -> void:
 	var ui_layer = CanvasLayer.new()
 	ui_layer.name = "UI"
+	if custom_ui_theme:
+		ui_layer.theme = custom_ui_theme
 	add_child(ui_layer)
 
 	create_hud_panel(ui_layer, spawn_cost)
@@ -196,14 +253,17 @@ func create_hud_panel(parent: CanvasLayer, spawn_cost: int) -> void:
 	hud_panel.position = hud_panel_position
 	hud_panel.custom_minimum_size = Vector2(hud_panel_width, 0)
 
-	var style = StyleBoxFlat.new()
-	style.bg_color = hud_panel_bg_color
-	style.border_color = hud_panel_border_color
-	style.set_border_width_all(hud_panel_border_width)
-	style.content_margin_left = hud_panel_content_margin
-	style.content_margin_right = hud_panel_content_margin
-	style.content_margin_top = hud_panel_content_margin
-	style.content_margin_bottom = hud_panel_content_margin
+	var style = _create_stylebox_skin(
+		hud_panel_skin_texture,
+		hud_panel_skin_margins,
+		hud_panel_bg_color,
+		hud_panel_border_color,
+		hud_panel_border_width,
+		hud_panel_content_margin,
+		hud_panel_content_margin,
+		hud_panel_content_margin,
+		hud_panel_content_margin
+	)
 	hud_panel.add_theme_stylebox_override("panel", style)
 
 	parent.add_child(hud_panel)
@@ -269,14 +329,17 @@ func create_shop_popup(parent: CanvasLayer) -> void:
 	shop_popup_panel.visible = false
 	shop_popup_panel.custom_minimum_size = Vector2(shop_popup_width, 0)
 
-	var style = StyleBoxFlat.new()
-	style.bg_color = shop_popup_bg_color
-	style.border_color = shop_popup_border_color
-	style.set_border_width_all(shop_popup_border_width)
-	style.content_margin_left = shop_popup_content_margin
-	style.content_margin_right = shop_popup_content_margin
-	style.content_margin_top = shop_popup_content_margin
-	style.content_margin_bottom = shop_popup_content_margin
+	var style = _create_stylebox_skin(
+		shop_popup_skin_texture,
+		shop_popup_skin_margins,
+		shop_popup_bg_color,
+		shop_popup_border_color,
+		shop_popup_border_width,
+		shop_popup_content_margin,
+		shop_popup_content_margin,
+		shop_popup_content_margin,
+		shop_popup_content_margin
+	)
 	shop_popup_panel.add_theme_stylebox_override("panel", style)
 
 	var vbox = VBoxContainer.new()
@@ -330,6 +393,12 @@ func setup_shop(catalog: Array) -> void:
 		shop_btn.custom_minimum_size = Vector2(0, shop_button_height)
 		_set_font_size(shop_btn, shop_popup_font_size)
 		shop_btn.disabled = true
+
+		var sprite_tex = preset.get("sprite_frame_a")
+		if sprite_tex and sprite_tex is Texture2D:
+			shop_btn.icon = sprite_tex
+			shop_btn.expand_icon = true
+			shop_btn.add_theme_constant_override("icon_max_width", shop_button_icon_size)
 
 		var index_captured := i
 		shop_btn.pressed.connect(func(): shop_purchase_requested.emit(index_captured))
@@ -394,17 +463,17 @@ func create_tooltip_ui(parent: CanvasLayer) -> void:
 	tooltip_panel.visible = false
 	tooltip_panel.custom_minimum_size = tooltip_minimum_size
 
-	var style = StyleBoxFlat.new()
-	style.bg_color = tooltip_bg_color
-	style.border_color = tooltip_border_color
-	style.set_border_width_all(tooltip_border_width)
-
-	# Atribui as margens horizontais (X) e verticais (Y) de forma independente
-	style.content_margin_left = tooltip_content_margin_x
-	style.content_margin_right = tooltip_content_margin_x
-	style.content_margin_top = tooltip_content_margin_y
-	style.content_margin_bottom = tooltip_content_margin_y
-
+	var style = _create_stylebox_skin(
+		tooltip_skin_texture,
+		tooltip_skin_margins,
+		tooltip_bg_color,
+		tooltip_border_color,
+		tooltip_border_width,
+		tooltip_content_margin_x,
+		tooltip_content_margin_x,
+		tooltip_content_margin_y,
+		tooltip_content_margin_y
+	)
 	tooltip_panel.add_theme_stylebox_override("panel", style)
 
 	# Ancoragem fixa no canto direito inferior
@@ -635,34 +704,96 @@ func hide_unit_tooltip() -> void:
 
 # Cria dinamicamente a mini barra de vida para a unidade
 func create_hp_bar_for_unit(unit) -> void:
+	if not unit or not is_instance_valid(unit):
+		return
+
 	var ui_layer = get_node_or_null("UI")
+	if not ui_layer:
+		setup_hud(100)
+		ui_layer = get_node_or_null("UI")
+
 	if not ui_layer:
 		return
 
-	var hp_bar = ProgressBar.new()
-	hp_bar.show_percentage = false
-	hp_bar.min_value = 0
-	hp_bar.max_value = unit.max_hp
-	hp_bar.value = unit.current_hp
-	hp_bar.size = Vector2(40, 6)
+	if custom_hp_bar_scene:
+		var custom_bar = custom_hp_bar_scene.instantiate()
+		ui_layer.add_child(custom_bar)
+		hp_bars[unit] = custom_bar
+		if custom_bar.has_signal("hp_changed"):
+			unit.hp_changed.connect(func(new_hp): custom_bar.emit_signal("hp_changed", new_hp))
+		unit.tree_exiting.connect(func():
+			hp_bars.erase(unit)
+			if is_instance_valid(custom_bar):
+				custom_bar.queue_free()
+		)
+		return
 
-	var sb_bg = StyleBoxFlat.new()
-	sb_bg.bg_color = Color(0.1, 0.1, 0.1, 0.5)
-	hp_bar.add_theme_stylebox_override("background", sb_bg)
+	# BARRA DE VIDA SEGMENTADA EM PIPS (Estilo Into the Breach)
+	var bar_container = HBoxContainer.new()
+	bar_container.name = "SegmentedHPBar"
+	bar_container.add_theme_constant_override("separation", hp_pip_separation)
+	_build_hp_pips(bar_container, unit)
 
-	var sb_fg = StyleBoxFlat.new()
-	sb_fg.bg_color = Color(0.9, 0.2, 0.2) if unit.is_enemy else Color(0.2, 0.8, 0.2)
-	hp_bar.add_theme_stylebox_override("fill", sb_fg)
+	ui_layer.add_child(bar_container)
+	hp_bars[unit] = bar_container
 
-	ui_layer.add_child(hp_bar)
-	hp_bars[unit] = hp_bar
-
-	unit.hp_changed.connect(func(new_hp): hp_bar.value = new_hp)
+	unit.hp_changed.connect(func(new_hp): _update_hp_pips(bar_container, unit, new_hp))
 	unit.tree_exiting.connect(func():
 		hp_bars.erase(unit)
-		if is_instance_valid(hp_bar):
-			hp_bar.queue_free()
+		if is_instance_valid(bar_container):
+			bar_container.queue_free()
 	)
+
+
+func _build_hp_pips(container: HBoxContainer, unit) -> void:
+	for child in container.get_children():
+		child.queue_free()
+
+	var fill_color = hp_pip_enemy_color if unit.is_enemy else hp_pip_player_color
+	var max_hp = unit.max_hp if unit.max_hp > 0 else 1
+
+	for i in range(max_hp):
+		var pip = PanelContainer.new()
+		pip.name = "Pip_" + str(i)
+		pip.custom_minimum_size = Vector2(hp_pip_width, hp_pip_height)
+		
+		var is_filled = i < unit.current_hp
+		var style = StyleBoxFlat.new()
+		style.bg_color = fill_color if is_filled else hp_pip_empty_color
+		style.border_color = hp_pip_border_color
+		style.set_border_width_all(1)
+		pip.add_theme_stylebox_override("panel", style)
+		
+		container.add_child(pip)
+
+
+func _update_hp_pips(container: HBoxContainer, unit, new_hp: int) -> void:
+	if not container or not is_instance_valid(container):
+		return
+
+	var pips = container.get_children()
+	if pips.size() != unit.max_hp:
+		_build_hp_pips(container, unit)
+		return
+
+	var fill_color = hp_pip_enemy_color if unit.is_enemy else hp_pip_player_color
+	for i in range(pips.size()):
+		var pip = pips[i]
+		if pip and pip is PanelContainer:
+			var is_filled = i < new_hp
+			var style = StyleBoxFlat.new()
+			style.bg_color = fill_color if is_filled else hp_pip_empty_color
+			style.border_color = hp_pip_border_color
+			style.set_border_width_all(1)
+			pip.add_theme_stylebox_override("panel", style)
+
+
+func _update_all_hp_bar_sizes() -> void:
+	for unit in hp_bars.keys():
+		if is_instance_valid(unit) and hp_bars.has(unit):
+			var bar = hp_bars[unit]
+			if bar and bar is HBoxContainer:
+				_build_hp_pips(bar, unit)
 
 
 # Converte a coordenada 3D em 2D para as barras acompanharem as peças
@@ -676,19 +807,21 @@ func update_hp_bar_positions() -> void:
 		if is_instance_valid(unit) and hp_bars.has(unit):
 			var bar = hp_bars[unit]
 			if is_instance_valid(bar):
-				var pos_3d = unit.global_position + Vector3(0, 0.8, 0)
+				var pos_3d = unit.global_position + Vector3(0, hp_bar_y_offset, 0)
 				if camera.is_position_behind(pos_3d):
 					bar.visible = false
 				else:
 					bar.visible = true
 					var pos_2d = camera.unproject_position(pos_3d)
-					bar.global_position = pos_2d - Vector2(20, 0)
+					var total_w = unit.max_hp * hp_pip_width + (unit.max_hp - 1) * hp_pip_separation
+					bar.global_position = pos_2d - Vector2(total_w / 2.0, hp_pip_height / 2.0)
 
 
 # Atualizadores visuais chamados pelo Mediador (GameController)
-func update_state_visuals(state_name: String, funds: int, is_player_turn: bool) -> void:
+func update_state_visuals(state_name: String, funds: int, is_player_turn: bool, income: int = 0) -> void:
 	if state_label:
-		state_label.text = "PHASE: " + state_name + "\nFunds: $" + str(funds)
+		var income_str = " (+" + str(income) + ")" if income > 0 else ""
+		state_label.text = "PHASE: " + state_name + "\nFunds: $" + str(funds) + income_str
 	if end_turn_btn:
 		end_turn_btn.disabled = not is_player_turn
 
@@ -728,6 +861,34 @@ func update_deploy_button(is_disabled: bool) -> void:
 		deploy_btn.disabled = is_disabled
 
 
-# --- HELPER (BASE): aplica o tamanho de fonte exportado num Control (Label ou Button) ---
+# --- HELPER (BASE): aplica o tamanho de fonte e fonte customizada num Control ---
 func _set_font_size(control: Control, size: int) -> void:
+	if custom_font:
+		control.add_theme_font_override("font", custom_font)
 	control.add_theme_font_size_override("font_size", size)
+
+
+# --- HELPER (SKINS): cria um StyleBoxTexture (9-slice) se houver textura, ou StyleBoxFlat se vazia ---
+func _create_stylebox_skin(custom_tex: Texture2D, margins: Rect2i, fallback_bg: Color, fallback_border: Color, fallback_border_w: int, content_l: int, content_r: int, content_t: int, content_b: int) -> StyleBox:
+	if custom_tex:
+		var sb_tex = StyleBoxTexture.new()
+		sb_tex.texture = custom_tex
+		sb_tex.texture_margin_left = margins.position.x
+		sb_tex.texture_margin_top = margins.position.y
+		sb_tex.texture_margin_right = margins.size.x
+		sb_tex.texture_margin_bottom = margins.size.y
+		sb_tex.content_margin_left = content_l
+		sb_tex.content_margin_right = content_r
+		sb_tex.content_margin_top = content_t
+		sb_tex.content_margin_bottom = content_b
+		return sb_tex
+	else:
+		var sb_flat = StyleBoxFlat.new()
+		sb_flat.bg_color = fallback_bg
+		sb_flat.border_color = fallback_border
+		sb_flat.set_border_width_all(fallback_border_w)
+		sb_flat.content_margin_left = content_l
+		sb_flat.content_margin_right = content_r
+		sb_flat.content_margin_top = content_t
+		sb_flat.content_margin_bottom = content_b
+		return sb_flat

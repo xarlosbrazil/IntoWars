@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="UnitData" format=3 uid="uid://dtbbxl6o3i3fw"]
+
+[ext_resource type="Script" uid="uid://cw7mbmuk7g4gf" path="res://Script/unit_data.gd" id="1_ddclx"]
+[ext_resource type="Texture2D" uid="uid://dhushbv61pj5u" path="res://Assets/blueslime1.png" id="2_ddclx"]
+[ext_resource type="Texture2D" uid="uid://ds6dqjl1vhx7q" path="res://Assets/blueslime2.png" id="3_1i60s"]
+
+[resource]
+script = ExtResource("1_ddclx")
+unit_name = "Blue Slime"
+sprite_frame_a = ExtResource("2_ddclx")
+sprite_frame_b = ExtResource("3_1i60s")
+pixel_size = 0.04
+hop_pixel_offset = 1.0
+cost = 60
+metadata/_custom_type_script = "uid://cw7mbmuk7g4gf"

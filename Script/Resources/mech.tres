@@ -8,5 +8,6 @@ script = ExtResource("1_g57sa")
 unit_name = "Player Char"
 sprite_frame_a = ExtResource("2_drlmm")
 sprite_frame_b = ExtResource("2_drlmm")
+pixel_size = 0.04
 cost = 50
 metadata/_custom_type_script = "uid://cw7mbmuk7g4gf"

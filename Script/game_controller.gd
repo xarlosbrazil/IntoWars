@@ -41,6 +41,14 @@ var current_state: TurnState = TurnState.PLAYER_TURN
 @export var player_hq_preset: Resource
 @export var enemy_hq_preset: Resource
 @export var neutral_city_preset: Resource
+# --- CAMERA SETTINGS ---
+@export_group("Camera Settings")
+## Ângulo de inclinação (Pitch) da câmera em graus. Teste valores entre -25° e -45° para alterar a perspectiva isométrica (estilo Into the Breach).
+@export_range(-85.0, -10.0, 0.5) var camera_pitch_angle: float = -35.264:
+	set(val):
+		camera_pitch_angle = val
+		update_camera_pitch()
+
 # --- SHOP CATALOG (BASE) ---
 @export_group("Shop")
 ## Arraste aqui quantos UnitData (.tres) quiser. Cada um vira um botão comprável na loja,
@@ -78,15 +86,16 @@ func _ready() -> void:
 	if camera:
 		camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 		camera.size = 11.0 
+		update_camera_pitch()
 	
 	grid_manager.generate_board()
-	setup_match_units_and_buildings()
-	
 	ui_manager.setup_hud(grid_manager.unit_spawn_cost)
 	ui_manager.setup_shop(shop_catalog)
+	setup_match_units_and_buildings()
 	
 	input_handler.tile_clicked.connect(_on_tile_clicked)
 	input_handler.tile_hovered.connect(_on_tile_hovered)
+	input_handler.right_clicked.connect(clear_selection)
 	
 	ui_manager.end_turn_requested.connect(_on_end_turn_requested)
 	ui_manager.undo_requested.connect(undo_last_move)
@@ -95,6 +104,14 @@ func _ready() -> void:
 	ui_manager.shop_purchase_requested.connect(execute_shop_purchase)
 	
 	change_state(TurnState.ENEMY_PLAN)
+
+
+func update_camera_pitch() -> void:
+	if not is_inside_tree():
+		return
+	var camera = get_viewport().get_camera_3d()
+	if camera:
+		camera.rotation_degrees.x = camera_pitch_angle
 
 
 func _process(delta: float) -> void:
@@ -119,7 +136,8 @@ func setup_match_units_and_buildings() -> void:
 	
 	# CENTRALIZAÇÃO INICIAL DA CÂMERA: Teleporta o pivô de câmera diretamente para o local do spawn do jogador
 	if camera_pivot:
-		camera_pivot.global_position = Vector3(p_hq_coord.x, 0.0, p_hq_coord.y)
+		var tile_s = grid_manager.tile_size if grid_manager else 1.0
+		camera_pivot.global_position = Vector3(float(p_hq_coord.x) * tile_s, 0.0, float(p_hq_coord.y) * tile_s)
 	
 	# Spawna o QG do jogador no CENTRO do tabuleiro
 	grid_manager.spawn_building(p_hq_coord, player_hq_preset, 1, true)
@@ -170,10 +188,7 @@ func change_state(new_state: TurnState) -> void:
 			ui_manager.update_undo_button(true)
 			
 			# Economia: Renda de propriedades
-			var income = 0
-			for b in grid_manager.active_buildings.values():
-				if b.faction == 1: 
-					income += grid_manager.income_per_building
+			var income = calculate_player_income()
 			player_funds += income
 			ui_layer_state_update(state_name, true)
 			
@@ -202,9 +217,20 @@ func change_state(new_state: TurnState) -> void:
 			change_state(TurnState.PLAYER_TURN)
 
 
+func calculate_player_income() -> int:
+	if not grid_manager:
+		return 0
+	var factions: Array = []
+	for b in grid_manager.active_buildings.values():
+		if b and is_instance_valid(b):
+			factions.append(b.get("faction"))
+	return EconomyRules.calculate_turn_income(factions, 1, grid_manager.income_per_building)
+
+
 func ui_layer_state_update(state_name: String, is_player: bool) -> void:
 	var display_text = "TURN: " + str(turn_count) + " (" + state_name + ")"
-	ui_manager.update_state_visuals(display_text, player_funds, is_player)
+	var income = calculate_player_income()
+	ui_manager.update_state_visuals(display_text, player_funds, is_player, income)
 	ui_manager.update_shop_affordability(player_funds)
 
 
@@ -231,13 +257,7 @@ func spawn_enemy_invasion_wave() -> void:
 
 # --- CHECAGEM DE DERROTA ---
 func check_defeat_conditions() -> void:
-	var player_hq_alive = false
-	for b in grid_manager.active_buildings.values():
-		if b.is_hq and b.faction == 1:
-			player_hq_alive = true
-			break
-			
-	if not player_hq_alive:
+	if BuildingRules.is_player_defeated(grid_manager.active_buildings.values()):
 		print("GAME OVER: Your HQ has been captured or destroyed!")
 
 
@@ -451,7 +471,8 @@ func rotate_camera_pivot(angle_degrees: float) -> void:
 func pan_camera_to_coords(coords: Vector2i) -> void:
 	if not camera_pivot or enable_free_camera:
 		return
-	var target_pos = Vector3(coords.x, 0.0, coords.y)
+	var tile_s = grid_manager.tile_size if grid_manager else 1.0
+	var target_pos = Vector3(float(coords.x) * tile_s, 0.0, float(coords.y) * tile_s)
 	var tween = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	tween.tween_property(camera_pivot, "position", target_pos, 0.3)
 
@@ -555,7 +576,8 @@ func walk_unit_along_path(unit, path: Array[Vector2i]) -> void:
 		var old_coords = unit.grid_position
 		var start_height = grid_manager.grid_cells[old_coords].get_meta("height")
 		var target_height = grid_manager.grid_cells[next_step].get_meta("height")
-		var target_pos = Vector3(next_step.x, target_height, next_step.y)
+		var tile_s = grid_manager.tile_size if grid_manager else 1.0
+		var target_pos = Vector3(float(next_step.x) * tile_s, target_height, float(next_step.y) * tile_s)
 		
 		# Speed profile modulations
 		var trans = Tween.TRANS_SINE
@@ -639,13 +661,10 @@ func update_unit_sprites_modulations() -> void:
 		if is_instance_valid(unit):
 			var sprite = unit.get_node_or_null("Sprite3D")
 			if sprite:
-				if unit.is_enemy:
-					sprite.modulate = Color(1.0, 0.4, 0.4)
+				if not unit.is_enemy and unit.has_acted_this_turn:
+					sprite.modulate = Color(0.5, 0.5, 0.5)
 				else:
-					if unit.has_acted_this_turn:
-						sprite.modulate = Color(0.4, 0.4, 0.4)
-					else:
-						sprite.modulate = Color(1.0, 1.0, 1.0)
+					sprite.modulate = Color(1.0, 1.0, 1.0)
 
 
 # --- COMBATE E IA ---
@@ -708,25 +727,23 @@ func execute_deploy_action() -> void:
 func execute_shop_purchase(catalog_index: int) -> void:
 	if selected_building_coords == Vector2i(-999, -999):
 		return
-	if catalog_index < 0 or catalog_index >= shop_catalog.size():
+		
+	var catalog_costs: Array = []
+	for item in shop_catalog:
+		catalog_costs.append(item.get("cost") if item else null)
+		
+	var is_occupied: bool = grid_manager.active_units.has(selected_building_coords)
+	var purchase_result: Dictionary = EconomyRules.process_unit_purchase(
+		player_funds, catalog_costs, catalog_index, is_occupied
+	)
+	if not purchase_result["can_purchase"]:
 		return
-	
+		
 	var preset = shop_catalog[catalog_index]
-	if not preset:
-		return
-	
-	var unit_cost = preset.get("cost")
-	if unit_cost == null:
-		unit_cost = 0
-	unit_cost = int(unit_cost)
-	
-	if player_funds < unit_cost:
-		return
-	
 	var new_unit = spawn_new_unit_at(selected_building_coords, preset, false)
 	if new_unit:
 		new_unit.has_acted_this_turn = true
-		player_funds -= unit_cost
+		player_funds = purchase_result["remaining_funds"]
 		ui_layer_state_update(_current_state_name(), current_state == TurnState.PLAYER_TURN)
 	
 	clear_selection()
